@@ -4,9 +4,11 @@ import { getAdjacentLessons, getAllLessonParams, getLesson, getLessonsByModule, 
 import { compileLesson } from "@/lib/mdx";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { mdxComponents } from "@/components/mdx";
-import { Breadcrumb } from "@/components/learn/breadcrumb";
 import { LessonHeader } from "@/components/learn/lesson-header";
-import { Toc, TocMobile } from "@/components/learn/toc";
+import { TocMobile } from "@/components/learn/toc";
+import { LessonAside } from "@/components/learn/lesson-aside";
+import { ModuleLessons } from "@/components/learn/module-lessons";
+import { ReadMore } from "@/components/learn/read-more";
 import { CompleteButton } from "@/components/learn/complete-button";
 import { LessonPager } from "@/components/learn/lesson-pager";
 import { NextStepCard } from "@/components/learn/next-step-card";
@@ -56,45 +58,54 @@ export default async function LessonPage({ params }: PageProps<"/belajar/[module
     publisher: { "@type": "Organization", name: SITE_NAME },
   };
 
+  const moduleList = moduleLessons.map(({ id, title, url }) => ({ id, title, url }));
+
   return (
-    <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_14rem] xl:gap-10">
-      <div className="min-w-0">
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-        <VisitTracker id={lesson.id} />
-        <Breadcrumb
-          items={[
-            { label: "Belajar", href: "/belajar/" },
-            { label: `Modul ${String(mod.order).padStart(2, "0")}`, href: `/belajar/${mod.id}/` },
-            { label: lesson.title },
-          ]}
-        />
-        <div className="mt-6">
-          <LessonHeader lesson={lesson} />
+    <div className="relative min-h-screen bg-background">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <VisitTracker id={lesson.id} />
+      <LessonHeader lesson={lesson} />
+
+      <div className="relative z-10 mx-auto max-w-7xl px-4 md:px-0">
+        <div className="flex divide-x divide-border border-x border-border">
+          <main className="min-w-0 flex-1">
+            <div className="p-6 lg:p-10">
+              <div className="space-y-4 lg:hidden" data-pagefind-ignore>
+                <TocMobile toc={toc} />
+                <details className="rounded-md border border-border bg-surface">
+                  <summary className="flex min-h-11 cursor-pointer items-center px-4 font-heading text-sm font-semibold">
+                    Pelajaran di modul ini
+                  </summary>
+                  <div className="border-t border-border p-2">
+                    <ModuleLessons lessons={moduleList} currentId={lesson.id} />
+                  </div>
+                </details>
+              </div>
+
+              <article className="prose mt-8 lg:mt-0" data-pagefind-body>
+                <Content components={mdxComponents} />
+              </article>
+              <p className="mt-12 max-w-[72ch] border-t border-border pt-4 font-sans text-sm text-muted">
+                Web tutorial ini dibuat oleh zagoours
+              </p>
+
+              <div className="mt-10 max-w-[72ch] space-y-10">
+                <CompleteButton id={lesson.id} />
+                <LessonPager prev={prev} next={next} />
+                {nextModule && <NextStepCard module={nextModule} />}
+                <section aria-labelledby="diskusi">
+                  <h2 id="diskusi" className="mb-4 text-xl">
+                    Diskusi
+                  </h2>
+                  <Comments key={lesson.id} />
+                </section>
+              </div>
+            </div>
+            <ReadMore lesson={lesson} prev={prev} next={next} siblings={moduleLessons} />
+          </main>
+
+          <LessonAside lesson={lesson} module={mod} moduleLessons={moduleList} toc={toc} />
         </div>
-        <TocMobile toc={toc} />
-
-        <article className="prose mt-10" data-pagefind-body>
-          <Content components={mdxComponents} />
-        </article>
-        <p className="mt-12 max-w-[72ch] border-t border-border pt-4 font-sans text-sm text-muted">
-          Web tutorial ini dibuat oleh zagoours
-        </p>
-
-        <div className="mt-14 max-w-[72ch] space-y-10 border-t border-border pt-10">
-          <CompleteButton id={lesson.id} />
-          {nextModule && <NextStepCard module={nextModule} />}
-          <LessonPager prev={prev} next={next} />
-          <section aria-labelledby="diskusi">
-            <h2 id="diskusi" className="mb-4 font-heading text-xl">
-              Diskusi
-            </h2>
-            <Comments key={lesson.id} />
-          </section>
-        </div>
-      </div>
-
-      <div className="hidden xl:block">
-        <Toc toc={toc} />
       </div>
     </div>
   );
