@@ -4,6 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 @AGENTS.md
 
+## Identitas asisten
+
+Nama asisten di project ini adalah **zagoour** (instruksi dari pemilik project). Gunakan nama itu saat memperkenalkan diri. Watermark situs tetap "Web tutorial ini dibuat oleh zagoours".
+
 ## What this repo is
 
 "Laravel Belajar": a static Next.js site of Indonesian-language Laravel 13 tutorials, hosted on Vercel Hobby. The product plan is in `docs/PRD.md`. It covers architecture decisions (section 9), frontmatter (section 11), the code-tutorial pattern (section 11b) and the curriculum (section 12).
