@@ -1,0 +1,339 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Contrast (WCAG): light fg 16:1, muted 7:1, accent 5.3:1; dark fg 14:1, muted 7:1, accent 6.4:1 */
+:root {
+  --background: #faf8f5;
+  --foreground: #1c1917;
+  --muted: #57534e;
+  --surface: #ffffff;
+  --surface-2: #f2efea;
+  --border: #e4dfd8;
+  --accent: #c8231a;
+  --accent-foreground: #ffffff;
+  --success: #15803d;
+  color-scheme: light;
+}
+
+.dark {
+  --background: #0f1720;
+  --foreground: #e7e5e4;
+  --muted: #a8a29e;
+  --surface: #16202b;
+  --surface-2: #1e2a37;
+  --border: #2a3746;
+  --accent: #ff6b5e;
+  --accent-foreground: #1c0d0b;
+  --success: #4ade80;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-serif), "Times New Roman", Georgia, serif;
+  --font-mono: var(--font-code), ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* All headings: ALL CAPS + extrabold. In the base layer so utilities can still override. */
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-heading);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.015em;
+    line-height: 1.15;
+  }
+  h3,
+  h4 {
+    letter-spacing: 0.03em;
+    line-height: 1.25;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -100px;
+  z-index: 100;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-weight: 600;
+}
+.skip-link:focus {
+  top: 1rem;
+}
+
+/* ---------- Lesson content ---------- */
+.prose {
+  max-width: 72ch;
+  font-family: var(--font-body);
+  font-size: 1.125rem;
+  line-height: 1.75;
+  color: var(--foreground);
+  overflow-wrap: break-word;
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+/* .prose is unlayered, so it restates the heading style instead of relying on @layer base. */
+.prose :where(h2, h3, h4) {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  text-transform: uppercase;
+  scroll-margin-top: 4.5rem;
+}
+.prose h2 {
+  font-size: 1.5rem;
+  line-height: 1.15;
+  letter-spacing: 0.015em;
+  margin: 3rem 0 1rem;
+  padding-top: 0.5rem;
+}
+.prose h3 {
+  font-size: 1.1875rem;
+  line-height: 1.25;
+  letter-spacing: 0.03em;
+  margin: 2.25rem 0 0.75rem;
+}
+.prose h4 {
+  font-size: 1.0625rem;
+  line-height: 1.25;
+  letter-spacing: 0.03em;
+  margin: 1.75rem 0 0.5rem;
+}
+.prose :where(h2, h3, h4) a {
+  color: inherit;
+  text-decoration: none;
+}
+.prose p {
+  margin: 1.25rem 0;
+}
+.prose :where(ul, ol) {
+  margin: 1.25rem 0;
+  padding-left: 1.5rem;
+}
+.prose ul {
+  list-style: disc;
+}
+.prose ol {
+  list-style: decimal;
+}
+.prose li {
+  margin: 0.375rem 0;
+  padding-left: 0.25rem;
+}
+.prose li::marker {
+  color: var(--muted);
+}
+.prose strong {
+  font-weight: 700;
+}
+.prose a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+.prose a:hover {
+  text-decoration-thickness: 2px;
+}
+.prose hr {
+  margin: 3rem 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.prose blockquote {
+  margin: 1.5rem 0;
+  padding: 0.875rem 1.125rem;
+  border-left: 4px solid var(--accent);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+.prose blockquote p {
+  margin: 0.5rem 0;
+}
+.prose blockquote > :first-child {
+  margin-top: 0;
+}
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+}
+
+.prose :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 0.125em 0.375em;
+  border-radius: 0.375rem;
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+
+.prose .table-wrap {
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+.prose th {
+  background: var(--surface);
+  font-weight: 600;
+  text-align: left;
+}
+.prose :where(th, td) {
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.prose tr:last-child td {
+  border-bottom: 0;
+}
+
+.prose ul.contains-task-list {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+.prose .task-list-item input[type="checkbox"] {
+  margin-right: 0.5rem;
+  accent-color: var(--accent);
+  transform: translateY(1px);
+}
+
+/* ---------- Code blocks: always dark, in both themes ---------- */
+.code-block {
+  margin: 1.5rem 0;
+  border: 1px solid #30363d;
+  border-radius: 0.75rem;
+  background: #0d1117;
+  overflow: hidden;
+  font-family: var(--font-sans);
+}
+.code-block__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.5rem;
+  padding: 0.375rem 0.5rem 0.375rem 1rem;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+}
+.code-block__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: #9da7b3;
+}
+.code-block__title:empty::before {
+  content: attr(data-language);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.code-block__copy {
+  flex-shrink: 0;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #30363d;
+  border-radius: 0.375rem;
+  background: #21262d;
+  color: #e6edf3;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.code-block__copy:hover {
+  background: #30363d;
+}
+.code-block__copy:focus-visible {
+  outline: 2px solid #ff6b5e;
+  outline-offset: 2px;
+}
+.code-block__copy[data-copied="true"] {
+  border-color: #238636;
+  background: #238636;
+  color: #ffffff;
+}
+.code-block pre {
+  margin: 0;
+  padding: 1rem 1.125rem;
+  overflow-x: auto;
+  background: #0d1117 !important;
+  color: #e6edf3;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  tab-size: 4;
+}
+.code-block pre code {
+  display: block;
+  min-width: max-content;
+  font-family: inherit;
+}
