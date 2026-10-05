@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getAllLessons, getModules } from "@/lib/content";
 import { CodeBlock } from "@/components/mdx/code-block";
+import HeroSection from "@/components/ui/hero-section-with-gradient";
 import { ResumeCard } from "@/components/learn/resume-card";
 
 // Excerpt from the Modul 02 lesson (ProductController@store), kept verbatim.
@@ -65,46 +66,15 @@ export default function Home() {
   return (
     <>
       {/* Hero */}
-      <section className="border-b border-border">
-        <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 md:py-24 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center">
-          <div className="motion-safe:animate-[fade-up_.6s_ease-out_both]">
-            <p className="font-mono text-sm text-muted">Laravel 13 · Bahasa Indonesia</p>
-            <h1 className="mt-4 max-w-[18ch] font-heading text-4xl text-balance sm:text-5xl">
-              Belajar Laravel 13 dengan membangun CRUD sungguhan.
-            </h1>
-            <p className="mt-6 max-w-[56ch] font-body text-lg leading-relaxed text-muted sm:text-xl">
-              Mulai dari CRUD Product dengan semua logic di controller, lalu refactor ke Service Pattern. Setiap langkah
-              menjelaskan kenapa kodenya bekerja, lengkap dengan file final yang bisa langsung disalin.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              {first && (
-                <Link
-                  href={first.url}
-                  className="inline-flex min-h-11 items-center rounded-md bg-accent px-5 text-sm font-semibold text-accent-foreground transition-opacity hover:opacity-90"
-                >
-                  Mulai Belajar
-                </Link>
-              )}
-              <Link
-                href="#jalur"
-                className="inline-flex min-h-11 items-center rounded-md border border-border px-5 text-sm font-semibold transition-colors hover:border-muted"
-              >
-                Lihat Jalur Belajar
-              </Link>
-            </div>
-          </div>
-
-          <div className="min-w-0 motion-safe:animate-[fade-up_.6s_.1s_ease-out_both]">
-            <CodeBlock data-title="app/Http/Controllers/ProductController.php" data-language="php">
-              <code>{SNIPPET}</code>
-            </CodeBlock>
-            <p className="mt-3 text-sm text-muted">
-              Dari Modul 02: <code className="font-mono text-[0.85em]">$request-&gt;validated()</code> hanya berisi data yang
-              lolos validasi <code className="font-mono text-[0.85em]">StoreProductRequest</code>.
-            </p>
-          </div>
-        </div>
-      </section>
+      <HeroSection startHref={first?.url ?? "/belajar/"} pathHref="#jalur">
+        <CodeBlock data-title="app/Http/Controllers/ProductController.php" data-language="php">
+          <code>{SNIPPET}</code>
+        </CodeBlock>
+        <p className="mt-3 text-sm text-muted">
+          Dari Modul 02: <code className="font-mono text-[0.85em]">$request-&gt;validated()</code> hanya berisi data yang
+          lolos validasi <code className="font-mono text-[0.85em]">StoreProductRequest</code>.
+        </p>
+      </HeroSection>
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <div className="mt-10 max-w-xl empty:hidden">

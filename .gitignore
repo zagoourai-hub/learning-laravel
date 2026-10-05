@@ -46,3 +46,5 @@ next-env.d.ts
 
 # local screenshots dropped in the repo root
 /image.png
+
+.vercel
