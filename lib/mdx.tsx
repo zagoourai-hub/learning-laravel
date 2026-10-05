@@ -111,7 +111,9 @@ export async function getSearchEntries(): Promise<SearchEntry[]> {
       entries.push({
         url: s.id ? `${lesson.url}#${s.id}` : lesson.url,
         lessonTitle: lesson.title,
+        moduleId: lesson.module,
         moduleTitle,
+        level: lesson.level,
         heading: s.heading,
         text: s.text,
       });

@@ -6,12 +6,15 @@ import type { SearchEntry } from "@/lib/types";
 
 type Hit = SearchEntry & { before: string; match: string; after: string };
 
+type Filters = { moduleId: string; level: string };
+
 // ponytail: linear scan over a static JSON index; fine for a few hundred sections, move to Pagefind when content grows.
-function search(index: SearchEntry[], query: string): Hit[] {
+function search(index: SearchEntry[], query: string, f: Filters): Hit[] {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!terms.length) return [];
+  if (query.trim().length < 2) return [];
   const hits: Hit[] = [];
   for (const e of index) {
+    if ((f.moduleId && e.moduleId !== f.moduleId) || (f.level && e.level !== f.level)) continue;
     const hay = `${e.lessonTitle} ${e.heading} ${e.text}`.toLowerCase();
     if (!terms.every((t) => hay.includes(t))) continue;
     const at = e.text.toLowerCase().indexOf(terms[0]);
@@ -33,7 +36,14 @@ export function SearchDialog() {
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const hits = index ? search(index, query) : [];
+  const [filters, setFilters] = useState<Filters>({ moduleId: "", level: "" });
+  const hits = index ? search(index, query, filters) : [];
+  const modules = index ? [...new Map(index.map((e) => [e.moduleId, e.moduleTitle])).entries()] : [];
+
+  function setFilter(key: keyof Filters, value: string) {
+    setFilters((f) => ({ ...f, [key]: value }));
+    setActive(0);
+  }
 
   function open() {
     dialog.current?.showModal();
@@ -57,7 +67,11 @@ export function SearchDialog() {
       }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("open-search", open);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("open-search", open);
+    };
   });
 
   function onInputKey(e: React.KeyboardEvent) {
@@ -118,13 +132,43 @@ export function SearchDialog() {
           </button>
         </div>
 
+        <div className="flex flex-wrap gap-x-4 gap-y-2 border-b border-border px-4 py-2.5 text-sm">
+          <label className="flex items-center gap-2 text-muted">
+            Modul
+            <select
+              value={filters.moduleId}
+              onChange={(e) => setFilter("moduleId", e.target.value)}
+              className="h-9 max-w-[14rem] rounded-md border border-border bg-background px-2 text-foreground"
+            >
+              <option value="">Semua</option>
+              {modules.map(([id, title]) => (
+                <option key={id} value={id}>
+                  {title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-muted">
+            Level
+            <select
+              value={filters.level}
+              onChange={(e) => setFilter("level", e.target.value)}
+              className="h-9 rounded-md border border-border bg-background px-2 text-foreground"
+            >
+              <option value="">Semua</option>
+              <option value="pemula">Pemula</option>
+              <option value="menengah">Menengah</option>
+            </select>
+          </label>
+        </div>
+
         <div className="max-h-[60vh] overflow-y-auto p-2" aria-live="polite">
           {error ? (
             <p className="px-3 py-8 text-center text-sm text-muted">Indeks pencarian gagal dimuat. Coba muat ulang halaman.</p>
           ) : !index ? (
             <p className="px-3 py-8 text-center text-sm text-muted">Memuat indeks…</p>
-          ) : !query.trim() ? (
-            <p className="px-3 py-8 text-center text-sm text-muted">Ketik kata kunci untuk mencari di semua pelajaran.</p>
+          ) : query.trim().length < 2 ? (
+            <p className="px-3 py-8 text-center text-sm text-muted">Ketik minimal 2 huruf untuk mencari di semua pelajaran.</p>
           ) : hits.length === 0 ? (
             <p className="px-3 py-8 text-center text-sm text-muted">Tidak ada hasil untuk “{query}”.</p>
           ) : (

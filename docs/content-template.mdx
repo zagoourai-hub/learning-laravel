@@ -1,0 +1,74 @@
+---
+title: "Judul Pelajaran"
+description: "Satu kalimat konkret tentang apa yang dibangun atau dipelajari."
+module: "NN-nama-modul"
+order: 1
+level: "pemula"
+laravelVersion: "13.x"
+lastVerified: "YYYY-MM-DD"
+estimatedMinutes: 15
+tags: ["tag-1", "tag-2"]
+prerequisites: ["02-crud-pemula/01-crud-full-controller"]
+nextStep: "NN-nama-modul/02-slug-berikutnya"
+---
+
+{/* Salin file ini ke content/laravel-13/<modul>/<NN-slug>.mdx, lalu:
+    - isi frontmatter (hapus prerequisites/nextStep bila tidak dipakai),
+    - jangan menulis # H1 (judul diambil dari frontmatter),
+    - hapus komentar ini. Lihat docs/content-guide.md. */}
+
+Paragraf pembuka: apa yang akan kamu bangun di pelajaran ini dan kenapa itu penting.
+
+## Yang akan kamu buat
+
+- Hasil konkret 1
+- Hasil konkret 2
+
+## Langkah 1 — Nama langkah
+
+Penjelasan singkat: apa yang dilakukan dan kenapa.
+
+```bash
+php artisan make:something Nama
+```
+
+## Langkah 2 — Nama langkah
+
+Potongan kode kecil untuk method yang sedang dibahas:
+
+```php
+public function index(): View
+{
+    // ...
+}
+```
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/NamaController.php`:
+
+```php title="app/Http/Controllers/NamaController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+// ...seluruh isi file, lengkap tanpa dipotong...
+```
+
+## Uji coba
+
+1. Jalankan `composer run dev` lalu buka `http://localhost:8000`.
+2. Langkah uji dan hasil yang diharapkan.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Pesan error | Penyebabnya | Cara memperbaiki |
+
+> **Tips:** satu catatan singkat yang membantu.
+
+## Cek pemahamanmu
+
+- [ ] Pertanyaan 1?
+- [ ] Pertanyaan 2?

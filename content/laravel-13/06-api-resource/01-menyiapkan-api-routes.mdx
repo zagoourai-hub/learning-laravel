@@ -39,6 +39,12 @@ Kalau ditanya apakah migration perlu dijalankan, jawab **yes**. Sanctum butuh ta
 
 > **Penting:** jalankan perintah ini di folder proyek `laravel13-crud` yang sama dengan Modul 02, supaya API bisa memakai model `Product` dan Form Request yang sudah ada.
 
+> **Jebakan umum:** `install:api` memasang Sanctum dengan menjalankan `composer require laravel/sanctum` lewat perintah `composer` di terminal. Kalau `composer` tidak bisa dijalankan dari terminal, Sanctum gagal terpasang **tanpa error yang jelas**: perintah tetap menampilkan "API scaffolding installed", tetapi file `config/sanctum.php` tidak ada dan `php artisan migrate` hanya berkata "Nothing to migrate". Pastikan `composer --version` berjalan dulu. Kalau kamu memakai `composer.phar`, tunjukkan lokasinya:
+>
+> ```bash
+> php artisan install:api --composer=/path/ke/composer.phar
+> ```
+
 ## Langkah 2 — Kenali isi routes/api.php
 
 Buka `routes/api.php`. Isinya kurang lebih seperti ini:
@@ -106,6 +112,7 @@ Header `Accept: application/json` penting: dengan header ini Laravel tahu klien 
 |---|---|---|
 | `/api/...` menghasilkan 404 | `routes/api.php` belum ada | Jalankan `php artisan install:api` |
 | Error tabel `personal_access_tokens` tidak ditemukan | Migration Sanctum belum dijalankan | `php artisan migrate` |
+| "API scaffolding installed" tapi tidak ada `config/sanctum.php`, dan `migrate` berkata "Nothing to migrate" | `composer` tidak bisa dijalankan dari terminal, jadi Sanctum tidak terpasang | Pastikan `composer --version` jalan, lalu ulangi `php artisan install:api`, atau pakai `php artisan install:api --composer=/path/ke/composer.phar` |
 | Respons berupa HTML, bukan JSON | Header `Accept: application/json` tidak dikirim | Tambahkan `-H "Accept: application/json"` di curl |
 
 ## Cek pemahamanmu

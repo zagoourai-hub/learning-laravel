@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 "Laravel Belajar": a static Next.js site of Indonesian-language Laravel 13 tutorials, hosted on Vercel Hobby. The product plan is in `docs/PRD.md`. It covers architecture decisions (section 9), frontmatter (section 11), the code-tutorial pattern (section 11b) and the curriculum (section 12).
 
-Current content: only module `02-crud-pemula` is published, with a single lesson converted from `docs/tutorial-laravel.md`. Every other module in `content/laravel-13/_modules.ts` is `coming-soon`.
+Current content: all 8 modules are published (43 lessons). Module `02-crud-pemula` is the author's own tutorial (`docs/tutorial-laravel.md`); the other modules were written from the official Laravel 13.x docs via Context7, following `docs/content-guide.md`. Any Product CRUD code in any module must match `docs/tutorial-laravel.md` verbatim, plus only the changes the lesson's topic needs. Run `node scripts/check-mdx.mjs <folder|file>` for a fast MDX syntax check without a full build.
 
 ## Commands
 
@@ -22,7 +22,7 @@ pnpm exec next typegen && pnpm exec tsc --noEmit   # type check
 ```
 
 - `pnpm lint` currently **fails** for the whole repo: typescript-eslint does not support TypeScript 7 yet. Do not downgrade TypeScript without asking the user.
-- There is no test framework.
+- There is no test framework for the site. CI (`.github/workflows/ci.yml`) runs `pnpm check:content`, `pnpm typecheck` and `pnpm build`.
 
 ## Architecture
 
@@ -34,7 +34,7 @@ pnpm exec next typegen && pnpm exec tsc --noEmit   # type check
   - `lib/mdx.tsx` compiles MDX at build time with `@mdx-js/mdx` `evaluate` (not `@next/mdx`), using remark-gfm, rehype-slug, a hand-written TOC/section collector and `@shikijs/rehype` (theme `github-dark-default`, so code is always dark). The fence meta `title="..."` becomes `data-title` on `<pre>`.
   - `getSearchEntries()` builds the search index, which is served as static `/search-index.json` (`app/search-index.json/route.ts`). Pagefind is not used.
 - **Routes:** `/`, `/belajar/`, `/belajar/[module]/`, `/belajar/[module]/[slug]/`, `/tentang/`, plus `sitemap.ts` and `robots.ts`. Components live in `components/layout`, `components/learn` and `components/mdx` (`mdxComponents` maps `pre` to the copyable `CodeBlock`).
-- **Client state:** learning progress is in `lib/progress.ts`, a `useSyncExternalStore` store over localStorage (key `laravel-belajar:progress`), with no Zustand. The theme uses a `.dark` class set by an inline script in `app/layout.tsx`. Search is a native `<dialog>` opened with Ctrl/⌘ K. giscus comments are not installed yet.
+- **Client state:** learning progress is in `lib/progress.ts`, a `useSyncExternalStore` store over localStorage (key `laravel-belajar:progress`), with no Zustand. The theme uses a `.dark` class set by an inline script in `app/layout.tsx`. Search is a native `<dialog>` opened with Ctrl/⌘ K. giscus comments (`components/learn/comments.tsx`, no package) stay disabled until the `NEXT_PUBLIC_GISCUS_*` env vars are set (see `.env.example`).
 - **Design:** tokens and the `.prose` and `.code-block` styles are in `app/globals.css` (Tailwind v4 `@theme inline`, no `tailwind.config`). Fonts are self-hosted from `@fontsource-variable/*` through `next/font/local` in `lib/fonts.ts`, because `fonts.gstatic.com` is unreachable from the dev machine, so don't switch back to `next/font/google`. The fonts are Plus Jakarta Sans for headings and UI, Source Serif 4 for lesson body text, and JetBrains Mono for code.
 
 ## Lesson writing rules (PRD section 11b)

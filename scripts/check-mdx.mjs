@@ -1,5 +1,6 @@
 // Fast MDX syntax check for lesson files, without a full `next build`.
-// Usage: node scripts/check-mdx.mjs content/laravel-13/03-service-pattern
+// Usage: node scripts/check-mdx.mjs                      (all modules in content/laravel-13)
+//        node scripts/check-mdx.mjs content/laravel-13/03-service-pattern
 //        node scripts/check-mdx.mjs path/to/lesson.mdx [...]
 // Frontmatter schema and cross-references are validated by `pnpm build` (lib/content.ts).
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -8,7 +9,13 @@ import { compile } from "@mdx-js/mdx";
 import matter from "gray-matter";
 import remarkGfm from "remark-gfm";
 
-const files = process.argv.slice(2).flatMap((p) =>
+const ROOT = "content/laravel-13";
+const args = process.argv.slice(2);
+const targets = args.length
+  ? args
+  : readdirSync(ROOT).map((d) => join(ROOT, d)).filter((p) => statSync(p).isDirectory());
+
+const files = targets.flatMap((p) =>
   statSync(p).isDirectory()
     ? readdirSync(p).filter((f) => f.endsWith(".mdx")).map((f) => join(p, f))
     : [p],

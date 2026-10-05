@@ -779,7 +779,6 @@ npm install sweetalert2
 Here's your complete `resources/js/app.js`:
 
 ```js title="resources/js/app.js"
-import './bootstrap';
 import Swal from 'sweetalert2';
 
 window.Swal = Swal;

@@ -1,0 +1,314 @@
+---
+title: "Pencarian Produk dengan when() dan withQueryString()"
+description: "Tambahkan kotak pencarian ke daftar produk: baca input dengan string()->trim(), saring query dengan when(), dan jaga kata kunci tetap ada saat pindah halaman pagination."
+module: "02-crud-pemula"
+order: 2
+level: "pemula"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["crud", "pencarian", "query-builder", "pagination"]
+prerequisites: ["02-crud-pemula/01-crud-full-controller"]
+nextStep: "02-crud-pemula/03-sweetalert2-laravel"
+---
+
+Daftar produkmu sudah punya pagination. Begitu datanya puluhan atau ratusan, pengguna butuh cara cepat menemukan satu produk. Di pelajaran ini kamu menambah **kotak pencarian** yang menyaring produk berdasarkan nama atau deskripsi.
+
+Kita mulai dari kode akhir pelajaran sebelumnya. Yang berubah hanya dua file: method `index()` di `ProductController` dan view `products/index.blade.php`.
+
+## Yang akan kamu buat
+
+- Form pencarian (method GET) di atas tabel produk
+- Query yang hanya disaring kalau kata kunci diisi
+- Link pagination yang tetap membawa kata kunci (`?search=...&page=2`)
+- Tombol **Reset** untuk kembali ke semua produk
+
+---
+
+## Langkah 1 — Baca kata kunci dari request
+
+Kata kunci dikirim lewat query string, misalnya `/products?search=kopi`. Laravel menyediakan method `string()` yang mengembalikan input sebagai objek `Stringable`, sehingga kamu bisa langsung merapikannya dengan `trim()`:
+
+```php
+$search = $request->string('search')->trim()->toString();
+```
+
+Kenapa ada `->toString()` di akhir? Karena `$request->string(...)` menghasilkan **objek** `Stringable`, bukan string biasa. Di PHP, sebuah objek **selalu bernilai truthy**, bahkan kalau isinya kosong. Kalau objek itu langsung dipakai sebagai kondisi, filter pencarian akan selalu jalan walaupun pengguna tidak mengetik apa pun.
+
+> **Jebakan umum:** `when($request->string('search')->trim(), ...)` selalu menjalankan closure, karena objek `Stringable` selalu truthy. Ubah dulu ke string dengan `->toString()`, atau cek isinya dengan `->isNotEmpty()`.
+
+Supaya kita juga bisa membaca `Request`, method `index()` sekarang menerima parameter `Request $request`.
+
+## Langkah 2 — Saring query dengan `when()`
+
+Method `when()` hanya menjalankan closure kalau argumen pertamanya bernilai `true`. Cocok untuk filter opsional:
+
+```php
+$products = Product::query()
+    ->when($search !== '', function (Builder $query) use ($search) {
+        $query->where(function (Builder $query) use ($search) {
+            $query->where('name', 'like', "%{$search}%")
+                ->orWhere('description', 'like', "%{$search}%");
+        });
+    })
+    ->latest()
+    ->paginate(10)
+    ->withQueryString();
+```
+
+Tiga hal penting di kode ini:
+
+1. **`$search !== ''`** — filter hanya aktif kalau kata kunci tidak kosong. Kita sengaja membandingkan dengan string kosong (bukan `when($search, ...)`) supaya kata kunci `0` tetap dicari.
+2. **`where(function ...)` membungkus `orWhere`** — dokumentasi Laravel menyarankan selalu mengelompokkan `orWhere` di dalam closure. Hasil SQL-nya `where (name like ? or description like ?)`. Kalau nanti kamu menambah filter lain (misalnya stok > 0), kondisi `or` tidak akan "bocor" dan mengabaikan filter itu.
+3. **`withQueryString()`** — tanpa ini, link halaman 2 menjadi `/products?page=2` dan kata kunci hilang. Dengan `withQueryString()`, semua query string saat ini ikut dibawa: `/products?search=kopi&page=2`.
+
+`Builder` di sini adalah `Illuminate\Database\Eloquent\Builder`, jadi tambahkan import-nya di atas controller.
+
+## Langkah 3 — Kirim kata kunci ke view
+
+View butuh kata kunci untuk mengisi ulang kotak pencarian dan menentukan apakah tombol Reset perlu tampil:
+
+```php
+return view('products.index', compact('products', 'search'));
+```
+
+### Final Complete Controller
+
+Hanya method `index()` dan dua baris `use` yang berubah dari pelajaran sebelumnya.
+
+Here's your complete `app/Http/Controllers/ProductController.php`:
+
+```php title="app/Http/Controllers/ProductController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Product;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+class ProductController extends Controller
+{
+    public function index(Request $request): View
+    {
+        $search = $request->string('search')->trim()->toString();
+
+        $products = Product::query()
+            ->when($search !== '', function (Builder $query) use ($search) {
+                $query->where(function (Builder $query) use ($search) {
+                    $query->where('name', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%");
+                });
+            })
+            ->latest()
+            ->paginate(10)
+            ->withQueryString();
+
+        return view('products.index', compact('products', 'search'));
+    }
+
+    public function create(): View
+    {
+        return view('products.create');
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        Product::create($request->validated());
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil ditambahkan.');
+    }
+
+    public function show(Product $product): View
+    {
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product): View
+    {
+        return view('products.edit', compact('product'));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        $product->update($request->validated());
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil diperbarui.');
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        $product->delete();
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil dihapus.');
+    }
+}
+```
+
+---
+
+## Langkah 4 — Tambah form pencarian di view
+
+Form pencarian memakai **method GET**, bukan POST. Alasannya:
+
+- Pencarian hanya *membaca* data, tidak mengubah apa pun, jadi tidak perlu `@csrf`.
+- Kata kunci muncul di URL, sehingga hasil pencarian bisa di-bookmark atau dibagikan.
+
+```blade
+<form action="{{ route('products.index') }}" method="GET" class="mb-6 flex gap-3">
+    <input type="search" name="search" value="{{ $search }}"
+           placeholder="Cari nama atau deskripsi produk..."
+           class="w-full rounded-md border border-gray-300 px-3 py-2">
+    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+        Cari
+    </button>
+    @if ($search !== '')
+        <a href="{{ route('products.index') }}" class="rounded-md border px-4 py-2 hover:bg-gray-50">
+            Reset
+        </a>
+    @endif
+</form>
+```
+
+Nama input (`name="search"`) harus sama dengan yang dibaca controller (`$request->string('search')`).
+
+Pesan saat data kosong juga sebaiknya membedakan "belum ada produk" dengan "pencarian tidak menemukan apa pun":
+
+```blade
+@empty
+    <tr>
+        <td colspan="4" class="px-6 py-4 text-center text-gray-500">
+            @if ($search !== '')
+                Tidak ada produk yang cocok dengan "{{ $search }}".
+            @else
+                Belum ada data produk.
+            @endif
+        </td>
+    </tr>
+@endforelse
+```
+
+`{{ $search }}` otomatis di-escape oleh Blade, jadi aman ditampilkan walaupun pengguna mengetik karakter HTML.
+
+### Final Complete View
+
+Here's your complete `resources/views/products/index.blade.php`:
+
+```blade title="resources/views/products/index.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Daftar Produk')
+
+@section('content')
+    <div class="mb-6 flex items-center justify-between">
+        <h1 class="text-2xl font-bold">Daftar Produk</h1>
+        <a href="{{ route('products.create') }}"
+           class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+            + Tambah Produk
+        </a>
+    </div>
+
+    <form action="{{ route('products.index') }}" method="GET" class="mb-6 flex gap-3">
+        <input type="search" name="search" value="{{ $search }}"
+               placeholder="Cari nama atau deskripsi produk..."
+               class="w-full rounded-md border border-gray-300 px-3 py-2">
+        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+            Cari
+        </button>
+        @if ($search !== '')
+            <a href="{{ route('products.index') }}" class="rounded-md border px-4 py-2 hover:bg-gray-50">
+                Reset
+            </a>
+        @endif
+    </form>
+
+    <div class="overflow-x-auto rounded-md bg-white shadow">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50 text-left text-sm font-semibold">
+                <tr>
+                    <th class="px-6 py-3">Nama</th>
+                    <th class="px-6 py-3">Harga</th>
+                    <th class="px-6 py-3">Stok</th>
+                    <th class="px-6 py-3">Aksi</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 text-sm">
+                @forelse ($products as $product)
+                    <tr>
+                        <td class="px-6 py-4">{{ $product->name }}</td>
+                        <td class="px-6 py-4">Rp {{ number_format($product->price, 0, ',', '.') }}</td>
+                        <td class="px-6 py-4">{{ $product->stock }}</td>
+                        <td class="px-6 py-4">
+                            <a href="{{ route('products.show', $product) }}"
+                               class="mr-3 text-gray-600 hover:text-gray-900">Detail</a>
+                            <a href="{{ route('products.edit', $product) }}"
+                               class="mr-3 text-indigo-600 hover:text-indigo-900">Edit</a>
+                            <form action="{{ route('products.destroy', $product) }}"
+                                  method="POST"
+                                  class="inline"
+                                  onsubmit="return confirm('Yakin ingin menghapus produk ini?')">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="text-red-600 hover:text-red-900">
+                                    Hapus
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center text-gray-500">
+                            @if ($search !== '')
+                                Tidak ada produk yang cocok dengan "{{ $search }}".
+                            @else
+                                Belum ada data produk.
+                            @endif
+                        </td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mt-6">
+        {{ $products->links() }}
+    </div>
+@endsection
+```
+
+---
+
+## Langkah 5 — Uji coba
+
+Pastikan `composer run dev` masih menyala, lalu buka `http://localhost:8000/products`.
+
+1. **Cari nama** — ketik sebagian nama produk, klik **Cari** → hanya produk yang cocok tampil, URL berisi `?search=...`.
+2. **Cari deskripsi** — ketik kata yang hanya ada di deskripsi → produknya tetap ketemu.
+3. **Spasi saja** — isi kotak dengan spasi lalu cari → semua produk tampil (karena `trim()`), tombol Reset tidak muncul.
+4. **Tidak ketemu** — cari kata acak → pesan "Tidak ada produk yang cocok dengan ..." muncul.
+5. **Pagination** — buat lebih dari 10 produk dengan kata yang sama, cari kata itu, lalu klik halaman 2 → kata kunci tetap ada di URL dan di kotak pencarian.
+6. **Reset** — klik **Reset** → kembali ke `/products` dengan semua produk.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Undefined variable $search` di view | `search` belum dikirim lewat `compact()` | `compact('products', 'search')` |
+| Filter selalu aktif walau kotak kosong | Objek `Stringable` dipakai langsung sebagai kondisi | Tambahkan `->toString()` lalu bandingkan dengan `''` |
+| Halaman 2 menampilkan semua produk lagi | Lupa `withQueryString()` | Tambahkan `->withQueryString()` setelah `paginate(10)` |
+| `Class "App\Http\Controllers\Builder" not found` | Import `Builder` belum ada | `use Illuminate\Database\Eloquent\Builder;` |
+| Kotak pencarian kosong lagi setelah mencari | `value` input tidak diisi | `value="{{ $search }}"` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa form pencarian memakai GET, bukan POST?
+- [ ] Kenapa objek `Stringable` tidak boleh langsung dipakai sebagai kondisi `when()`?
+- [ ] Apa fungsi `where(function ...)` yang membungkus `orWhere`?
+- [ ] Apa yang terjadi pada link pagination tanpa `withQueryString()`?

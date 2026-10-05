@@ -11,6 +11,7 @@ import { CompleteButton } from "@/components/learn/complete-button";
 import { LessonPager } from "@/components/learn/lesson-pager";
 import { NextStepCard } from "@/components/learn/next-step-card";
 import { VisitTracker } from "@/components/learn/visit-tracker";
+import { Comments } from "@/components/learn/comments";
 
 export const dynamicParams = false;
 
@@ -83,6 +84,12 @@ export default async function LessonPage({ params }: PageProps<"/belajar/[module
           <CompleteButton id={lesson.id} />
           {nextModule && <NextStepCard module={nextModule} />}
           <LessonPager prev={prev} next={next} />
+          <section aria-labelledby="diskusi">
+            <h2 id="diskusi" className="mb-4 font-heading text-xl">
+              Diskusi
+            </h2>
+            <Comments key={lesson.id} />
+          </section>
         </div>
       </div>
 

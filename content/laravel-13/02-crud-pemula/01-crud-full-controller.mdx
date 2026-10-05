@@ -8,6 +8,7 @@ laravelVersion: "13.x"
 lastVerified: "2026-10-05"
 estimatedMinutes: 60
 tags: ["crud", "controller", "form-request", "blade", "tailwind"]
+nextStep: "02-crud-pemula/02-pencarian-produk"
 ---
 
 Di tutorial ini kamu membangun **manajemen produk** (Create, Read, Update, Delete) dari nol. Semua logic sengaja ditaruh di **controller** dulu, supaya alurnya mudah dipahami. Setelah paham, lanjut ke halaman berikutnya: **Service Pattern** (memindahkan logic keluar dari controller).
@@ -808,7 +809,6 @@ npm install sweetalert2
 Here's your complete `resources/js/app.js`:
 
 ```js title="resources/js/app.js"
-import './bootstrap';
 import Swal from 'sweetalert2';
 
 window.Swal = Swal;
@@ -900,4 +900,4 @@ Sebelum lanjut, pastikan kamu bisa menjawab:
 
 Sekarang semua logic (query, simpan, ubah, hapus) masih ada di controller. Itu wajar untuk belajar, tetapi saat aplikasi membesar, controller jadi gemuk dan sulit diuji.
 
-**Lanjut ke: Service Pattern** — pindahkan logic ke `ProductService` dan buat controller menjadi tipis.
+**Lanjut ke: Pencarian Produk** — tambahkan kotak pencarian ke daftar produk. Setelah itu modul ini dilanjutkan dengan SweetAlert2, troubleshooting, dan latihan CRUD Book. Selesai Modul 02, lanjut ke **Service Pattern** untuk memindahkan logic ke `ProductService` dan membuat controller menjadi tipis.

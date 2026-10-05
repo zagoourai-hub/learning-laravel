@@ -1,0 +1,139 @@
+---
+title: "Latihan Mandiri: CRUD Book & Checklist Siap Lanjut"
+description: "Uji pemahamanmu dengan membangun CRUD Book (title, author, year, stock) sendiri mengikuti pola CRUD Product, lalu cek apakah kamu siap lanjut ke Service Pattern."
+module: "02-crud-pemula"
+order: 5
+level: "pemula"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 60
+tags: ["latihan", "crud", "checklist"]
+prerequisites: ["02-crud-pemula/01-crud-full-controller", "02-crud-pemula/04-troubleshooting"]
+---
+
+Cara terbaik memastikan kamu benar-benar paham CRUD adalah membangunnya **tanpa menyalin**. Di latihan ini kamu membuat manajemen buku (`Book`) di proyek yang sama, mengikuti pola CRUD Product. Pelajaran ini sengaja hanya berisi spesifikasi dan petunjuk, bukan jawaban lengkap.
+
+> **Tips:** kalau buntu, buka lagi pelajaran CRUD Product dan bandingkan langkah demi langkah. Itu bukan curang, itu cara belajar. Yang penting, ketik sendiri kodenya.
+
+## Spesifikasi
+
+Buat CRUD lengkap untuk tabel `books` dengan kolom berikut:
+
+| Kolom | Tipe | Aturan |
+|---|---|---|
+| `title` | string | wajib, maksimal 255 karakter |
+| `author` | string | wajib, maksimal 255 karakter |
+| `year` | integer (tahun terbit) | wajib, bilangan bulat, antara 1900 dan tahun sekarang |
+| `stock` | unsigned integer | wajib, bilangan bulat, minimal 0, default 0 |
+
+Fitur yang harus ada:
+
+- Daftar buku dengan pagination 10 data per halaman, diurutkan dari yang terbaru
+- Form tambah dan edit dengan validasi + pesan error berbahasa Indonesia
+- Halaman detail buku
+- Hapus buku dengan konfirmasi
+- Pesan sukses setelah tambah, ubah, dan hapus
+
+URL-nya: `/books`, `/books/create`, `/books/{book}`, `/books/{book}/edit`.
+
+---
+
+## Petunjuk langkah
+
+### 1. Model, migration, controller, dan Form Request
+
+Kamu sudah mengenal "cara cepat" dari pelajaran CRUD. Satu perintah ini membuat model, migration, resource controller, dan dua Form Request sekaligus:
+
+```bash
+php artisan make:model Book -mcrR
+```
+
+Coba tebak dulu: file apa saja yang akan dibuat? Lalu jalankan dan cocokkan dengan output Artisan.
+
+### 2. Struktur tabel
+
+Isi migration `create_books_table` dengan keempat kolom di spesifikasi. Petunjuk:
+
+- Lihat lagi kolom `stock` di migration `products`, polanya sama.
+- Untuk tahun, kolom bilangan bulat biasa sudah cukup.
+
+Jangan lupa menjalankan migration setelahnya.
+
+### 3. Model `Book`
+
+Isi `$fillable` dengan kolom yang boleh diisi massal. Tambahkan `casts()` supaya `year` dan `stock` selalu dibaca sebagai integer.
+
+### 4. Validasi
+
+Isi `rules()` di `StoreBookRequest` dan `UpdateBookRequest` sesuai kolom "Aturan" di tabel spesifikasi. Petunjuk untuk `year`:
+
+- Aturan `min` dan `max` pada nilai integer membandingkan **angka**, bukan panjang teks.
+- Tahun sekarang bisa didapat dengan `now()->year`. Karena nilainya dinamis, tulis aturannya sebagai string yang digabung, misalnya `'max:'.now()->year`.
+
+Tambahkan juga `messages()` berbahasa Indonesia, dan ingat jebakan `authorize()`.
+
+### 5. Route
+
+Daftarkan satu baris `Route::resource` untuk `books` di `routes/web.php`. Cek hasilnya dengan:
+
+```bash
+php artisan route:list --except-vendor
+```
+
+Pastikan nama parameternya `{book}`, karena nama variabel di controller harus sama.
+
+### 6. Controller
+
+Isi ketujuh method `BookController`. Polanya identik dengan `ProductController`: ganti `Product` menjadi `Book`, `$product` menjadi `$book`, `products` menjadi `books`, dan sesuaikan pesan suksesnya.
+
+> **Jebakan umum:** perhatikan `compact()`. Halaman daftar memakai `compact('books')`, halaman detail dan edit memakai `compact('book')`.
+
+### 7. View
+
+Buat folder `resources/views/books` berisi `index`, `create`, `edit`, dan `show`:
+
+```bash
+php artisan make:view books.index
+php artisan make:view books.create
+php artisan make:view books.edit
+php artisan make:view books.show
+```
+
+Pakai ulang `layouts.app` yang sudah ada. Tantangan kecil: tambahkan link **Buku** dan **Produk** di layout supaya mudah berpindah halaman.
+
+---
+
+## Uji hasil latihanmu
+
+Kerjakan checklist uji yang sama seperti CRUD Product:
+
+1. Kirim form tambah kosong → semua pesan error muncul, input lain tidak hilang.
+2. Isi tahun `1800` atau tahun depan → ditolak dengan pesan yang jelas.
+3. Isi stok `-1` atau `2.5` → ditolak.
+4. Tambah buku valid → kembali ke daftar dengan pesan sukses.
+5. Buka detail, edit, lalu hapus → semuanya bekerja dan menampilkan pesan yang sesuai.
+6. Tambah lebih dari 10 buku → link pagination muncul.
+
+Kalau ada error, cocokkan dengan pelajaran **Troubleshooting CRUD**.
+
+## Tantangan tambahan (opsional)
+
+- Tambahkan pencarian berdasarkan `title` atau `author`, mengikuti pelajaran Pencarian Produk.
+- Pakai SweetAlert2 untuk konfirmasi hapus dan notifikasi sukses, mengikuti pelajaran SweetAlert2.
+
+---
+
+## Checklist: siap lanjut ke Service Pattern?
+
+Centang semuanya sebelum masuk modul berikutnya:
+
+- [ ] Aku bisa menjelaskan fungsi ketujuh method resource controller tanpa melihat catatan.
+- [ ] Aku tahu beda `create()` dan `store()`, serta `edit()` dan `update()`.
+- [ ] Aku bisa menjelaskan dari mana `$book` di `show(Book $book)` berasal (route model binding).
+- [ ] Aku membuat validasi dengan Form Request dan memakai `$request->validated()`.
+- [ ] Aku paham kenapa form edit memakai `@method('PUT')` dan semua form memakai `@csrf`.
+- [ ] Aku bisa memakai `old()` dan `@error` agar input tidak hilang saat validasi gagal.
+- [ ] CRUD Book-ku lolos semua langkah di "Uji hasil latihanmu".
+- [ ] Saat bertemu error, aku tahu harus mulai mencari dari mana.
+
+Semua tercentang? Kamu sudah menyelesaikan Modul 02. Di modul berikutnya, **Service Pattern**, kamu akan melihat kenapa controller yang berisi semua logic lama-lama menjadi masalah, lalu memindahkan logic itu ke `ProductService` sehingga controller menjadi tipis.

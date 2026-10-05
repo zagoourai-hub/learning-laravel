@@ -30,14 +30,26 @@ Laravel mendukung Pest dan PHPUnit. Contoh di pelajaran ini memakai gaya PHPUnit
 
 Kita akan memakai trait `RefreshDatabase`, yang mereset database untuk setiap tes. Itu berarti **tes tidak boleh memakai database development-mu**, atau data produk yang sudah kamu input bisa hilang.
 
-Saat tes berjalan, Laravel otomatis memakai environment `testing`. Nilai environment khusus tes bisa diatur di `phpunit.xml` atau di file `.env.testing`. Buka `phpunit.xml` di root proyek dan pastikan bagian `<php>` berisi koneksi SQLite in-memory seperti ini (tambahkan kalau belum ada atau masih dalam komentar):
+Saat tes berjalan, Laravel otomatis memakai environment `testing`. Nilai environment khusus tes bisa diatur di `phpunit.xml` atau di file `.env.testing`. Kabar baiknya, `phpunit.xml` bawaan Laravel 13 **sudah** berisi koneksi SQLite in-memory di bagian `<php>`:
 
 ```html
 <env name="DB_CONNECTION" value="sqlite"/>
 <env name="DB_DATABASE" value=":memory:"/>
 ```
 
-Dengan `:memory:`, database tes dibuat di memori setiap kali tes jalan dan hilang setelahnya.
+Jadi kamu tidak perlu mengubah apa pun; cukup pastikan dua baris itu tidak kamu hapus. Dengan `:memory:`, database tes dibuat di memori setiap kali tes jalan dan hilang setelahnya, sehingga data development-mu aman.
+
+### Sesuaikan ExampleTest bawaan
+
+Laravel membuat `tests/Feature/ExampleTest.php` yang mengharapkan halaman `/` menjawab status 200. Di Modul 02 kita menambahkan `Route::redirect('/', '/products')`, jadi `/` sekarang menjawab redirect 302 dan tes bawaan itu gagal dengan pesan `Expected response status code [200] but received 302`.
+
+Ubah isi method tesnya agar sesuai perilaku aplikasi kita:
+
+```php title="tests/Feature/ExampleTest.php (method tes)"
+$this->get('/')->assertRedirect('/products');
+```
+
+Atau hapus saja file `tests/Feature/ExampleTest.php`, karena `ProductTest` di bawah sudah menguji halaman daftar produk.
 
 ## Langkah 3 — Buat file tes
 

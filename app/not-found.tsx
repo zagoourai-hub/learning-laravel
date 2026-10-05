@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { OpenSearchButton } from "@/components/learn/open-search-button";
 
 export default function NotFound() {
   return (
@@ -18,6 +19,7 @@ export default function NotFound() {
         >
           Ke jalur belajar
         </Link>
+        <OpenSearchButton />
         <Link href="/" className="inline-flex min-h-11 items-center rounded-md border border-border px-5 text-sm font-semibold hover:border-muted">
           Beranda
         </Link>

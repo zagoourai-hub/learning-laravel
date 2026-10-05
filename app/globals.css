@@ -13,6 +13,11 @@
   --accent: #c8231a;
   --accent-foreground: #ffffff;
   --success: #15803d;
+  /* Callout variants: strong text on 7% tint >= 5.7:1 */
+  --info: #1d4ed8;
+  --tip: #166534;
+  --warning: #92400e;
+  --danger: #b91c1c;
   color-scheme: light;
 }
 
@@ -26,6 +31,10 @@
   --accent: #ff6b5e;
   --accent-foreground: #1c0d0b;
   --success: #4ade80;
+  --info: #93c5fd;
+  --tip: #86efac;
+  --warning: #fcd34d;
+  --danger: #fca5a5;
   color-scheme: dark;
 }
 
@@ -39,6 +48,10 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-success: var(--success);
+  --color-info: var(--info);
+  --color-tip: var(--tip);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
 
   --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   --font-heading: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
@@ -212,6 +225,25 @@ body {
 .prose blockquote > :last-child {
   margin-bottom: 0;
 }
+/* Callouts: blockquotes mapped to <aside class="callout" data-variant>. */
+.prose .callout {
+  --callout: var(--info);
+  margin: 1.5rem 0;
+  padding: 0.875rem 1.125rem;
+  border-left: 3px solid var(--callout);
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--callout) 7%, var(--surface));
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+.prose .callout[data-variant="tip"] { --callout: var(--tip); }
+.prose .callout[data-variant="warning"] { --callout: var(--warning); }
+.prose .callout[data-variant="danger"] { --callout: var(--danger); }
+.prose .callout p { margin: 0.5rem 0; }
+.prose .callout > :first-child { margin-top: 0; }
+.prose .callout > :last-child { margin-bottom: 0; }
+.prose .callout > :first-child > strong:first-child { color: var(--callout); }
 .prose img {
   max-width: 100%;
   height: auto;

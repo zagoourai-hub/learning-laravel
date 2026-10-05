@@ -1,0 +1,236 @@
+---
+title: "Troubleshooting CRUD: Error yang Paling Sering Muncul"
+description: "Kenali penyebab dan cara memperbaiki error CRUD Laravel yang paling sering dialami pemula: View not found, huruf besar-kecil di Linux, create vs created, compact(), route model binding, 403, 419, dan Vite manifest."
+module: "02-crud-pemula"
+order: 4
+level: "pemula"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["troubleshooting", "error", "debugging", "crud"]
+prerequisites: ["02-crud-pemula/01-crud-full-controller"]
+nextStep: "02-crud-pemula/05-latihan-crud-book"
+---
+
+Hampir semua error CRUD yang dialami pemula berasal dari hal kecil: satu huruf, satu nama variabel, atau satu baris yang terlewat. Pelajaran ini membahas error di tabel "Error yang sering muncul" pelajaran CRUD secara lebih detail: **gejalanya**, **kenapa terjadi**, dan **cara memperbaikinya**.
+
+Cara membaca setiap bagian: cocokkan pesan error di layar dengan judul bagian, lalu ikuti solusinya.
+
+> **Tips:** saat `APP_DEBUG=true` (default di lingkungan lokal), Laravel menampilkan halaman error lengkap dengan file dan baris penyebabnya. Baca baris paling atas dulu, karena biasanya di situlah petunjuk utamanya.
+
+---
+
+## 1. `View [products.index] not found`
+
+**Gejala:** membuka `/products` menampilkan error `View [products.index] not found.`
+
+**Penyebab:** `view('products.index')` mencari file `resources/views/products/index.blade.php`. Titik pada nama view berarti folder. Error ini muncul kalau:
+
+- file belum dibuat,
+- nama folder salah (`product` tunggal, bukan `products` jamak),
+- ekstensi salah (`index.php` atau `index.html`, bukan `index.blade.php`).
+
+**Solusi:** buat file dengan Artisan supaya lokasi dan ekstensinya pasti benar:
+
+```bash
+php artisan make:view products.index
+```
+
+Lalu cocokkan lagi nama di controller dengan struktur folder:
+
+```text
+view('products.index')  →  resources/views/products/index.blade.php
+view('products.create') →  resources/views/products/create.blade.php
+```
+
+## 2. Class tidak ditemukan karena huruf besar-kecil (PSR-4 di Linux)
+
+**Gejala:** di laptop (Windows/macOS) aplikasi berjalan normal, tetapi setelah di-deploy ke server Linux muncul:
+
+```text
+Class "App\Http\Controllers\ProductController" not found
+```
+
+**Penyebab:** Composer memuat class mengikuti standar PSR-4: nama class harus **sama persis** dengan nama file, termasuk huruf besar-kecil. Sistem file Windows dan macOS umumnya tidak membedakan huruf besar-kecil, jadi `productController.php` tetap "ketemu". Linux membedakannya, sehingga file itu dianggap tidak ada.
+
+**Solusi:**
+
+1. Pastikan nama class dan nama file identik dan diawali huruf besar: class `ProductController` di file `ProductController.php`.
+2. Kalau file sudah telanjur di-commit dengan nama salah, Git di Windows/macOS sering tidak mendeteksi perubahan yang hanya huruf besar-kecil. Rename dalam **dua langkah** lewat nama sementara:
+
+   ```bash
+   git mv app/Http/Controllers/productController.php app/Http/Controllers/Temp.php
+   git mv app/Http/Controllers/Temp.php app/Http/Controllers/ProductController.php
+   ```
+
+3. Perbarui daftar class milik Composer:
+
+   ```bash
+   composer dump-autoload
+   ```
+
+## 3. `Call to undefined method ...::created()`
+
+**Gejala:** submit form tambah produk menampilkan error `Call to undefined method App\Models\Product::created()` (atau pesan serupa).
+
+**Penyebab:** salah ketik. Method untuk menyimpan data baru adalah `create`. Nama `created` (bentuk lampau) bukan method penyimpan data.
+
+**Solusi:**
+
+```php
+Product::create($request->validated());
+```
+
+## 4. `Undefined variable $products` karena `compact()` salah nama
+
+**Gejala:** view menampilkan `Undefined variable $products` (atau `$product`).
+
+**Penyebab:** `compact()` membuat array dari **nama variabel** yang kamu tulis sebagai string. Kalau string-nya tidak sama persis dengan nama variabel, data tidak terkirim ke view.
+
+```php
+$products = Product::latest()->paginate(10);
+
+return view('products.index', compact('product')); // salah: variabelnya $products
+```
+
+**Solusi:** samakan string di `compact()` dengan nama variabel, dan pakai nama yang sama di view:
+
+```php
+return view('products.index', compact('products'));
+```
+
+Aturan praktisnya: halaman daftar memakai jamak (`$products`), halaman detail/edit memakai tunggal (`$product`).
+
+## 5. Validasi tidak jalan: `Request` vs `FormRequest`
+
+**Gejala:** form dengan data kosong tetap tersimpan, atau database menolak dengan error kolom wajib, bukan pesan validasi yang rapi.
+
+**Penyebab:** method memakai `Illuminate\Http\Request` biasa, bukan Form Request. `Request` biasa tidak menjalankan aturan validasi apa pun.
+
+```php
+public function store(Request $request): RedirectResponse // tidak ada validasi
+```
+
+**Solusi:** pakai Form Request yang sudah dibuat, sehingga Laravel memvalidasi data **sebelum** method dijalankan, dan simpan hanya data yang lolos validasi:
+
+```php
+public function store(StoreProductRequest $request): RedirectResponse
+{
+    Product::create($request->validated());
+
+    return to_route('products.index')
+        ->with('success', 'Produk berhasil ditambahkan.');
+}
+```
+
+Jangan lupa import-nya: `use App\Http\Requests\StoreProductRequest;`.
+
+## 6. Edit/hapus tidak bekerja, model kosong tanpa error
+
+**Gejala:** halaman edit tampil dengan form kosong, atau tombol hapus tidak menghapus apa pun, padahal **tidak ada pesan error**.
+
+**Penyebab:** route model binding hanya bekerja kalau **nama parameter di method sama dengan nama parameter di route**. `Route::resource('products', ...)` membuat parameter `{product}`, jadi variabelnya harus `$product`.
+
+```php
+public function edit(Product $products): View // salah: route memakai {product}
+```
+
+Karena namanya tidak cocok, Laravel tidak mengambil data dari database, melainkan membuat objek `Product` baru yang kosong. Itulah kenapa tidak ada error, tetapi datanya kosong.
+
+**Solusi:**
+
+```php
+public function edit(Product $product): View
+{
+    return view('products.edit', compact('product'));
+}
+```
+
+Cek nama parameter route dengan:
+
+```bash
+php artisan route:list --except-vendor
+```
+
+## 7. `403 Forbidden` saat submit form
+
+**Gejala:** setiap submit form tambah atau edit berakhir di halaman **403 This action is unauthorized**.
+
+**Penyebab:** Form Request yang dibuat Artisan berisi `authorize()` yang mengembalikan `false`. Artinya semua request ditolak sebelum validasi.
+
+**Solusi:** untuk aplikasi tanpa login seperti tutorial ini, ubah menjadi `true` di `StoreProductRequest` **dan** `UpdateProductRequest`:
+
+```php
+public function authorize(): bool
+{
+    return true;
+}
+```
+
+Nanti saat aplikasi punya login dan hak akses, method ini bisa berisi pengecekan izin yang sebenarnya (dibahas di modul Autentikasi).
+
+## 8. `419 Page Expired`
+
+**Gejala:** submit form menampilkan halaman **419 Page Expired**.
+
+**Penyebab:** Laravel melindungi setiap form POST, PUT, PATCH, dan DELETE dari serangan CSRF. Form tanpa token CSRF ditolak.
+
+**Solusi:** tambahkan `@csrf` di setiap form yang mengubah data, tepat di bawah tag pembuka form:
+
+```blade
+<form action="{{ route('products.store') }}" method="POST">
+    @csrf
+    {{-- input lainnya --}}
+</form>
+```
+
+Error ini juga bisa muncul kalau halaman form dibiarkan terbuka terlalu lama sampai sesi habis. Cukup refresh halaman lalu submit ulang.
+
+## 9. `Unable to locate file in Vite manifest`
+
+**Gejala:** semua halaman error dengan pesan `Unable to locate file in Vite manifest: resources/css/app.css` (atau `app.js`).
+
+**Penyebab:** layout memakai `@vite([...])`, tetapi aset belum di-build dan Vite dev server tidak berjalan.
+
+**Solusi:**
+
+- Saat development, jalankan semuanya sekaligus:
+
+  ```bash
+  composer run dev
+  ```
+
+  atau jalankan Vite saja di terminal terpisah:
+
+  ```bash
+  npm run dev
+  ```
+
+- Untuk produksi, build aset sekali:
+
+  ```bash
+  npm run build
+  ```
+
+---
+
+## Ringkasan
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `View [products.index] not found` | File view belum ada / salah folder | `php artisan make:view products.index` |
+| `Class "...ProductController" not found` (Linux) | Huruf besar-kecil nama file ≠ nama class | Samakan nama, rename dua langkah, `composer dump-autoload` |
+| `Call to undefined method ...::created()` | Salah ketik | `Product::create(...)` |
+| `Undefined variable $products` | String di `compact()` salah | `compact('products')` |
+| Data kosong tetap tersimpan | Memakai `Request`, bukan Form Request | `StoreProductRequest $request` + `validated()` |
+| Edit/hapus model kosong tanpa error | `$products` vs `{product}` | Samakan menjadi `$product` |
+| `403 Forbidden` | `authorize()` masih `false` | `return true;` |
+| `419 Page Expired` | Lupa `@csrf` | Tambahkan `@csrf` di form |
+| `Unable to locate file in Vite manifest` | Vite tidak jalan / aset belum di-build | `composer run dev` atau `npm run build` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa error huruf besar-kecil sering baru muncul setelah deploy ke Linux?
+- [ ] Kenapa nama parameter route yang salah tidak menimbulkan error, tetapi datanya kosong?
+- [ ] Apa beda error 403 dan 419 pada form?
+- [ ] Apa yang harus dijalankan agar error Vite manifest hilang saat development dan saat produksi?

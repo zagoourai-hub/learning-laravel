@@ -1,0 +1,383 @@
+---
+title: "Notifikasi & Konfirmasi Hapus dengan SweetAlert2 Laravel"
+description: "Pasang paket resmi sweetalert2/laravel untuk notifikasi sukses lewat Swal::toastSuccess(), lalu ganti confirm() bawaan browser dengan dialog konfirmasi hapus yang aman dari tanda petik."
+module: "02-crud-pemula"
+order: 3
+level: "pemula"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 25
+tags: ["sweetalert2", "blade", "vite", "ux"]
+prerequisites: ["02-crud-pemula/02-pencarian-produk"]
+nextStep: "02-crud-pemula/04-troubleshooting"
+---
+
+Saat ini aplikasimu memberi tahu pengguna lewat kotak hijau di atas halaman, dan konfirmasi hapus memakai `confirm()` bawaan browser yang tampilannya kaku. Di pelajaran ini kamu mengganti keduanya dengan **SweetAlert2**:
+
+- **Notifikasi sukses** muncul sebagai toast di pojok kanan atas, dikirim dari controller dengan paket resmi [`sweetalert2/laravel`](https://github.com/sweetalert2/sweetalert2-laravel).
+- **Konfirmasi hapus** memakai dialog SweetAlert2 yang rapi, dengan nama produk yang aman dari tanda petik.
+
+Kita melanjutkan kode akhir pelajaran Pencarian Produk.
+
+## Prasyarat
+
+- `composer run dev` berjalan (Vite harus aktif, karena kita menambah JavaScript)
+- Paket `sweetalert2/laravel` mendukung Laravel 11, 12, dan 13
+
+---
+
+## Langkah 1 — Pasang paket
+
+Paket Laravel (untuk notifikasi dari controller):
+
+```bash
+composer require sweetalert2/laravel
+```
+
+Paket JavaScript (untuk dialog konfirmasi hapus yang kita panggil sendiri dari Blade):
+
+```bash
+npm install sweetalert2
+```
+
+Service provider paket terdaftar otomatis, jadi tidak ada konfigurasi tambahan.
+
+## Langkah 2 — Daftarkan SweetAlert2 di `app.js`
+
+Kode ini sama dengan bagian Bonus di pelajaran CRUD. `window.Swal` membuat SweetAlert2 bisa dipakai dari mana saja, dan `window.confirmDelete` adalah fungsi yang akan dipanggil tombol Hapus.
+
+Here's your complete `resources/js/app.js`:
+
+```js title="resources/js/app.js"
+import Swal from 'sweetalert2';
+
+window.Swal = Swal;
+
+window.confirmDelete = (form, productName) => {
+    Swal.fire({
+        title: 'Hapus produk?',
+        text: `Produk "${productName}" akan dihapus permanen.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, hapus',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#dc2626',
+        reverseButtons: true,
+    }).then((result) => {
+        if (result.isConfirmed) {
+            form.submit();
+        }
+    });
+};
+```
+
+## Langkah 3 — Pasang view paket di layout
+
+Tambahkan `@include('sweetalert2::index')` tepat sebelum `</body>`. View ini membaca pesan yang dikirim controller (disimpan di session flash) lalu menampilkannya dengan `Swal.fire(...)`.
+
+Kotak hijau `session('success')` kita hapus, karena perannya sudah digantikan toast SweetAlert2.
+
+> **Tips:** view paket memakai `window.Swal` kalau sudah tersedia (dari `app.js` di atas). Kalau belum ada, paket memuat SweetAlert2 dari CDN jsDelivr. Karena kita sudah mendaftarkan `window.Swal`, notifikasi dan dialog hapus memakai versi yang sama.
+
+Here's your complete `resources/views/layouts/app.blade.php`:
+
+```blade title="resources/views/layouts/app.blade.php"
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@yield('title', 'Laravel 13 CRUD')</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <main class="mx-auto max-w-5xl px-4 py-10">
+        @yield('content')
+    </main>
+
+    @include('sweetalert2::index')
+</body>
+</html>
+```
+
+---
+
+## Langkah 4 — Kirim notifikasi dari controller
+
+Import class `Swal` dari paket:
+
+```php
+use SweetAlert2\Laravel\Swal;
+```
+
+Paket menyediakan helper seperti `Swal::success()`, `Swal::error()`, `Swal::toast()`, dan `Swal::toastSuccess()`. Semuanya menerima **array opsi** yang sama dengan opsi `Swal.fire()` di JavaScript, misalnya `title`, `position`, dan `timer`.
+
+Di `store()`, ganti `->with('success', ...)` dengan `Swal::toastSuccess(...)` sebelum redirect:
+
+```php
+public function store(StoreProductRequest $request): RedirectResponse
+{
+    Product::create($request->validated());
+
+    Swal::toastSuccess([
+        'title' => 'Produk berhasil ditambahkan.',
+        'position' => 'top-end',
+        'showConfirmButton' => false,
+        'timer' => 3000,
+        'timerProgressBar' => true,
+    ]);
+
+    return to_route('products.index');
+}
+```
+
+Arti opsinya:
+
+- `title` — teks notifikasi. Kita memakai pesan yang sama seperti sebelumnya.
+- `position` `top-end` — toast muncul di pojok kanan atas.
+- `showConfirmButton` `false` + `timer` `3000` — toast hilang sendiri setelah 3 detik, tanpa tombol OK.
+- `timerProgressBar` — garis tipis yang menunjukkan sisa waktu.
+
+`Swal::toastSuccess()` menyimpan opsi ke session flash, persis seperti `->with('success', ...)`. Setelah redirect, view paket di layout membacanya dan memunculkan toast satu kali.
+
+> **Tips:** mau dialog di tengah layar, bukan toast? Pakai `Swal::success(['title' => 'Produk berhasil ditambahkan.'])`.
+
+Lakukan hal yang sama di `update()` dan `destroy()` dengan pesan masing-masing.
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/ProductController.php`:
+
+```php title="app/Http/Controllers/ProductController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Product;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+use SweetAlert2\Laravel\Swal;
+
+class ProductController extends Controller
+{
+    public function index(Request $request): View
+    {
+        $search = $request->string('search')->trim()->toString();
+
+        $products = Product::query()
+            ->when($search !== '', function (Builder $query) use ($search) {
+                $query->where(function (Builder $query) use ($search) {
+                    $query->where('name', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%");
+                });
+            })
+            ->latest()
+            ->paginate(10)
+            ->withQueryString();
+
+        return view('products.index', compact('products', 'search'));
+    }
+
+    public function create(): View
+    {
+        return view('products.create');
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        Product::create($request->validated());
+
+        Swal::toastSuccess([
+            'title' => 'Produk berhasil ditambahkan.',
+            'position' => 'top-end',
+            'showConfirmButton' => false,
+            'timer' => 3000,
+            'timerProgressBar' => true,
+        ]);
+
+        return to_route('products.index');
+    }
+
+    public function show(Product $product): View
+    {
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product): View
+    {
+        return view('products.edit', compact('product'));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        $product->update($request->validated());
+
+        Swal::toastSuccess([
+            'title' => 'Produk berhasil diperbarui.',
+            'position' => 'top-end',
+            'showConfirmButton' => false,
+            'timer' => 3000,
+            'timerProgressBar' => true,
+        ]);
+
+        return to_route('products.index');
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        $product->delete();
+
+        Swal::toastSuccess([
+            'title' => 'Produk berhasil dihapus.',
+            'position' => 'top-end',
+            'showConfirmButton' => false,
+            'timer' => 3000,
+            'timerProgressBar' => true,
+        ]);
+
+        return to_route('products.index');
+    }
+}
+```
+
+---
+
+## Langkah 5 — Ganti `confirm()` dengan dialog SweetAlert2
+
+Ubah form hapus di `products/index.blade.php`. Dua perubahan penting:
+
+1. Hapus `onsubmit="return confirm(...)"` dari tag `<form>`.
+2. Tombol menjadi `type="button"` dan memanggil `confirmDelete(this.form, @js($product->name))`.
+
+```blade
+<form action="{{ route('products.destroy', $product) }}" method="POST" class="inline">
+    @csrf
+    @method('DELETE')
+    <button type="button"
+            class="text-red-600 hover:text-red-900"
+            onclick="confirmDelete(this.form, @js($product->name))">
+        Hapus
+    </button>
+</form>
+```
+
+Kenapa `type="button"`? Tombol `type="submit"` langsung mengirim form begitu diklik, sebelum dialog sempat muncul, sehingga produk terhapus tanpa konfirmasi. Dengan `type="button"`, form baru dikirim oleh `form.submit()` setelah pengguna menekan **Ya, hapus**.
+
+Kenapa `@js(...)`? Directive ini mengubah nilai PHP menjadi literal JavaScript yang aman. Kalau kamu menulis `'{{ $product->name }}'`, nama produk seperti `Es Teh's` akan memutus string JavaScript di tanda petiknya dan tombol tidak berfungsi.
+
+### Final Complete View
+
+Here's your complete `resources/views/products/index.blade.php`:
+
+```blade title="resources/views/products/index.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Daftar Produk')
+
+@section('content')
+    <div class="mb-6 flex items-center justify-between">
+        <h1 class="text-2xl font-bold">Daftar Produk</h1>
+        <a href="{{ route('products.create') }}"
+           class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+            + Tambah Produk
+        </a>
+    </div>
+
+    <form action="{{ route('products.index') }}" method="GET" class="mb-6 flex gap-3">
+        <input type="search" name="search" value="{{ $search }}"
+               placeholder="Cari nama atau deskripsi produk..."
+               class="w-full rounded-md border border-gray-300 px-3 py-2">
+        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+            Cari
+        </button>
+        @if ($search !== '')
+            <a href="{{ route('products.index') }}" class="rounded-md border px-4 py-2 hover:bg-gray-50">
+                Reset
+            </a>
+        @endif
+    </form>
+
+    <div class="overflow-x-auto rounded-md bg-white shadow">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50 text-left text-sm font-semibold">
+                <tr>
+                    <th class="px-6 py-3">Nama</th>
+                    <th class="px-6 py-3">Harga</th>
+                    <th class="px-6 py-3">Stok</th>
+                    <th class="px-6 py-3">Aksi</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 text-sm">
+                @forelse ($products as $product)
+                    <tr>
+                        <td class="px-6 py-4">{{ $product->name }}</td>
+                        <td class="px-6 py-4">Rp {{ number_format($product->price, 0, ',', '.') }}</td>
+                        <td class="px-6 py-4">{{ $product->stock }}</td>
+                        <td class="px-6 py-4">
+                            <a href="{{ route('products.show', $product) }}"
+                               class="mr-3 text-gray-600 hover:text-gray-900">Detail</a>
+                            <a href="{{ route('products.edit', $product) }}"
+                               class="mr-3 text-indigo-600 hover:text-indigo-900">Edit</a>
+                            <form action="{{ route('products.destroy', $product) }}" method="POST" class="inline">
+                                @csrf
+                                @method('DELETE')
+                                <button type="button"
+                                        class="text-red-600 hover:text-red-900"
+                                        onclick="confirmDelete(this.form, @js($product->name))">
+                                    Hapus
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center text-gray-500">
+                            @if ($search !== '')
+                                Tidak ada produk yang cocok dengan "{{ $search }}".
+                            @else
+                                Belum ada data produk.
+                            @endif
+                        </td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mt-6">
+        {{ $products->links() }}
+    </div>
+@endsection
+```
+
+---
+
+## Langkah 6 — Uji coba
+
+1. **Tambah produk** → kembali ke daftar, toast hijau "Produk berhasil ditambahkan." muncul di kanan atas dan hilang sendiri.
+2. **Edit produk** → toast "Produk berhasil diperbarui.".
+3. **Hapus** → dialog "Hapus produk?" muncul. Klik **Batal** → produk tetap ada. Klik lagi lalu **Ya, hapus** → produk hilang dan toast "Produk berhasil dihapus." muncul.
+4. **Tanda petik** → buat produk bernama `Es Teh's`, lalu klik **Hapus** → dialog muncul dengan nama yang benar.
+5. **Refresh** halaman setelah toast hilang → toast tidak muncul lagi (session flash hanya berlaku untuk satu request).
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Klik Hapus tidak terjadi apa-apa, console: `confirmDelete is not defined` | Vite tidak jalan atau `app.js` belum memuat kode di atas | Jalankan `composer run dev` (atau `npm run dev`); untuk produksi `npm run build` |
+| Produk langsung terhapus tanpa dialog | Tombol masih `type="submit"` atau `onsubmit` lama masih ada | Pakai `type="button"` dan hapus `onsubmit` dari `<form>` |
+| Tombol Hapus mati hanya untuk produk tertentu | Nama produk mengandung tanda petik dan ditulis dengan `'{{ ... }}'` | Pakai `@js($product->name)` |
+| Toast tidak pernah muncul | `@include('sweetalert2::index')` belum ada di layout | Tambahkan sebelum `</body>` di `layouts/app.blade.php` |
+| `Class "SweetAlert2\Laravel\Swal" not found` | Paket belum terpasang atau import salah | `composer require sweetalert2/laravel` dan `use SweetAlert2\Laravel\Swal;` |
+| Toast muncul tapi juga ada kotak hijau | Kotak `session('success')` lama masih di layout dan controller masih memakai `->with('success', ...)` | Hapus salah satunya; di pelajaran ini kita memakai SweetAlert2 |
+
+## Cek pemahamanmu
+
+- [ ] Di mana `Swal::toastSuccess()` menyimpan pesannya sebelum redirect?
+- [ ] Kenapa tombol Hapus harus `type="button"`?
+- [ ] Apa bedanya `@js($product->name)` dengan `'{{ $product->name }}'`?
+- [ ] Kenapa dialog hapus berhenti bekerja kalau Vite tidak jalan?

@@ -39,7 +39,9 @@ export type TocItem = { id: string; text: string; depth: 2 | 3 };
 export type SearchEntry = {
   url: string; // lesson url, plus "#<heading-id>" for a section
   lessonTitle: string;
+  moduleId: string; // for the module filter in the search dialog
   moduleTitle: string;
+  level: Level; // for the level filter in the search dialog
   heading: string; // "" for the lesson intro
   text: string; // plain text of that section
 };
