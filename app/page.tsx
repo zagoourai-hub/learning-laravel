@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getAllLessons, getModules } from "@/lib/content";
-import { CodeBlock } from "@/components/mdx/code-block";
+import { codeToHtml } from "shiki";
+import { HeroCodeCard } from "@/components/ui/hero-code-card";
 import HeroSection from "@/components/ui/hero-section-with-gradient";
 import { ResumeCard } from "@/components/learn/resume-card";
 
@@ -57,7 +58,8 @@ const FAQ = [
   ],
 ] as const;
 
-export default function Home() {
+export default async function Home() {
+  const snippetHtml = await codeToHtml(SNIPPET, { lang: "php", theme: "github-dark-default" });
   const modules = getModules();
   const lessons = getAllLessons();
   const first = lessons[0];
@@ -67,9 +69,12 @@ export default function Home() {
     <>
       {/* Hero */}
       <HeroSection startHref={first?.url ?? "/belajar/"} pathHref="#jalur">
-        <CodeBlock data-title="app/Http/Controllers/ProductController.php" data-language="php">
-          <code>{SNIPPET}</code>
-        </CodeBlock>
+        <HeroCodeCard
+          filename="app/Http/Controllers/ProductController.php"
+          html={snippetHtml}
+          code={SNIPPET}
+          result={{ status: "302", text: "→ /products · Produk berhasil ditambahkan." }}
+        />
         <p className="mt-3 text-sm text-muted">
           Dari Modul 02: <code className="font-mono text-[0.85em]">$request-&gt;validated()</code> hanya berisi data yang
           lolos validasi <code className="font-mono text-[0.85em]">StoreProductRequest</code>.

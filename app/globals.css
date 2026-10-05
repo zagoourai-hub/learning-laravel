@@ -369,3 +369,23 @@ body {
   min-width: max-content;
   font-family: inherit;
 }
+
+/* Hero code card: line numbers on Shiki output */
+.hero-code code {
+  counter-reset: line;
+}
+.hero-code .line {
+  display: inline-block;
+  min-width: 100%;
+  padding-right: 1rem;
+}
+.hero-code .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 2.5rem;
+  margin-right: 1rem;
+  text-align: right;
+  color: #6e7681;
+  user-select: none;
+}
