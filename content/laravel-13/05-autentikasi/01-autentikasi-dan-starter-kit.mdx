@@ -1,0 +1,73 @@
+---
+title: "Autentikasi dan Starter Kit Laravel 13"
+description: "Pahami apa itu autentikasi dan authorization, kenali starter kit resmi Laravel 13 (React, Vue, Svelte, Livewire), dan kenapa modul ini membangun login manual."
+module: "05-autentikasi"
+order: 1
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 10
+tags: ["autentikasi", "starter-kit", "fortify", "konsep"]
+prerequisites: ["02-crud-pemula/01-crud-full-controller"]
+nextStep: "05-autentikasi/02-register-login-logout"
+---
+
+Sampai sekarang siapa pun bisa membuka `/products` lalu menambah, mengubah, atau menghapus produk. Di modul ini kita menutup celah itu: pengunjung harus **login**, dan setiap produk punya **pemilik** yang hanya boleh diubah oleh pemiliknya sendiri.
+
+Modul ini melanjutkan proyek `laravel13-crud` dari **kode akhir Modul 02**. Pelajaran ini murni konsep.
+
+## Autentikasi vs authorization
+
+Dua istilah ini sering tertukar:
+
+| Istilah | Pertanyaan yang dijawab | Contoh di proyek |
+|---|---|---|
+| **Autentikasi** (authentication) | *Siapa kamu?* | Login dengan email dan password |
+| **Authorization** | *Kamu boleh melakukan ini?* | Hanya pemilik produk yang boleh mengedit produk itu |
+
+Pelajaran 02–03 membahas autentikasi, pelajaran 04–05 membahas authorization.
+
+## Starter kit resmi Laravel 13
+
+Laravel menyediakan **starter kit** yang langsung memberi halaman login, registrasi, reset password, dan verifikasi email. Saat membuat proyek baru, installer menanyakan starter kit yang ingin dipakai:
+
+```bash
+laravel new example-app
+```
+
+Pilihan starter kit resmi di Laravel 13:
+
+- **React**: frontend React lewat Inertia, dengan React 19, TypeScript, Tailwind, dan komponen shadcn/ui.
+- **Vue**: frontend Vue lewat Inertia, dengan Composition API, TypeScript, Tailwind, dan shadcn-vue.
+- **Svelte**: frontend Svelte lewat Inertia.
+- **Livewire**: frontend dengan Livewire (UI reaktif hanya dengan PHP), Tailwind, dan komponen Flux UI.
+
+Semua starter kit memakai **Laravel Fortify** untuk mengurus proses autentikasi: route, controller, dan logika login, registrasi, reset password, serta verifikasi email.
+
+> **Tips:** untuk proyek baru yang sungguhan, starter kit adalah pilihan paling aman dan cepat. Fitur keamanan seperti regenerasi session saat login sudah diurus untukmu.
+
+## Kenapa modul ini membangun login sendiri?
+
+Proyek kita sudah berjalan dengan Blade biasa tanpa starter kit, dan starter kit dipilih saat proyek **dibuat** dengan `laravel new`. Selain itu, membangun login sendiri dengan beberapa baris kode memperlihatkan apa yang sebenarnya terjadi di balik starter kit:
+
+- `Auth::attempt()` mencocokkan email dan password.
+- `Auth::login()` membuat user langsung masuk setelah registrasi.
+- `Auth::logout()` dan invalidasi session saat logout.
+- Middleware `auth` dan `guest` untuk melindungi route.
+
+Semua yang kita pakai adalah fitur bawaan Laravel yang didokumentasikan di bagian **Manually Authenticating Users**. Kita juga tidak perlu membuat tabel baru: Laravel sudah menyertakan model `App\Models\User`, dan migration bawaannya sudah membuat tabel `users` lengkap dengan kolom `password` dan `remember_token`.
+
+## Rencana modul ini
+
+1. **Register, login, logout**: `AuthController`, dua form, dan route-nya.
+2. **Melindungi route**: middleware `auth` untuk semua route produk, plus menu user di layout.
+3. **Produk milik user**: kolom `user_id`, dan daftar produk hanya menampilkan produk milikmu.
+4. **Policy**: `ProductPolicy` supaya user lain tidak bisa membuka atau mengubah produkmu lewat URL.
+5. **Latihan**: remember me, pesan penolakan, dan mencoba starter kit di proyek baru.
+
+## Cek pemahamanmu
+
+- [ ] Apa beda autentikasi dan authorization?
+- [ ] Sebutkan empat starter kit resmi Laravel 13.
+- [ ] Paket apa yang dipakai semua starter kit untuk mengurus autentikasi?
+- [ ] Kenapa kita tidak perlu membuat tabel `users` sendiri?

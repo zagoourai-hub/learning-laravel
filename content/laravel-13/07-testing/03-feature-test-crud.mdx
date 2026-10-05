@@ -1,0 +1,290 @@
+---
+title: "Feature Test CRUD Product"
+description: "Menguji seluruh alur CRUD Product dari Modul 02: daftar dan pagination 10 data, tambah, detail, ubah, dan hapus, lengkap dengan redirect dan pesan sukses."
+module: "07-testing"
+order: 3
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 25
+tags: ["testing", "feature-test", "crud", "refresh-database"]
+prerequisites: ["07-testing/02-product-factory"]
+nextStep: "07-testing/04-test-validasi"
+---
+
+Sekarang kita menulis test untuk setiap method `ProductController` dari Modul 02. Setiap test mengulang satu baris checklist "Uji coba" di Modul 02, tapi otomatis:
+
+| Checklist manual Modul 02 | Test otomatis |
+|---|---|
+| Create valid → kembali ke daftar dengan pesan hijau | `test_product_can_be_stored` |
+| Read → buka Detail, data tampil | `test_product_detail_can_be_shown` |
+| Update → pesan "Produk berhasil diperbarui." | `test_product_can_be_updated` |
+| Delete → data hilang dari daftar | `test_product_can_be_deleted` |
+| Pagination → lebih dari 10 produk | `test_index_paginates_ten_products_per_page` |
+
+## Langkah 1 — Database bersih di setiap test: RefreshDatabase
+
+Test yang menyimpan data tidak boleh saling mengganggu. Trait `RefreshDatabase` me-reset database untuk setiap test: tiap test berjalan di dalam transaksi database, jadi data dari satu test tidak terbawa ke test berikutnya.
+
+```php
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+class ProductTest extends TestCase
+{
+    use RefreshDatabase;
+}
+```
+
+## Langkah 2 — Matikan Vite di test
+
+View dari Modul 02 memanggil `@vite(...)` di layout. Saat test berjalan tanpa `composer run dev` atau tanpa `npm run build`, aset Vite tidak tersedia dan view gagal dirender. Method `withoutVite()` memalsukan Vite selama test:
+
+```php
+protected function setUp(): void
+{
+    parent::setUp();
+
+    $this->withoutVite();
+}
+```
+
+## Langkah 3 — Test daftar produk dan pagination
+
+`index()` di Modul 02 menjalankan `Product::latest()->paginate(10)` lalu mengirim `$products` ke view `products.index`.
+
+```php
+public function test_index_displays_products(): void
+{
+    Product::factory()->create(['name' => 'Kopi Susu']);
+
+    $response = $this->get(route('products.index'));
+
+    $response->assertOk();
+    $response->assertSee('Kopi Susu');
+}
+
+public function test_index_paginates_ten_products_per_page(): void
+{
+    Product::factory()->count(11)->create();
+
+    $response = $this->get(route('products.index'));
+
+    $response->assertViewHas('products', fn ($products) => $products->count() === 10);
+}
+```
+
+`assertViewHas()` dengan closure memeriksa data yang dikirim ke view: dari 11 produk, halaman pertama hanya berisi 10.
+
+## Langkah 4 — Test tambah produk
+
+`store()` menyimpan data lalu `to_route('products.index')` dengan flash `success` bernilai `Produk berhasil ditambahkan.`. Test-nya memeriksa ketiganya:
+
+```php
+public function test_product_can_be_stored(): void
+{
+    $response = $this->post(route('products.store'), [
+        'name' => 'Kopi Susu',
+        'description' => 'Kopi susu gula aren',
+        'price' => 18000,
+        'stock' => 25,
+    ]);
+
+    $response->assertRedirect(route('products.index'));
+    $response->assertSessionHas('success', 'Produk berhasil ditambahkan.');
+    $this->assertDatabaseHas('products', [
+        'name' => 'Kopi Susu',
+        'stock' => 25,
+    ]);
+}
+```
+
+Form Blade punya `@csrf`, tapi di test kita tidak perlu mengirim token: dokumentasi Laravel menjelaskan middleware CSRF otomatis dimatikan saat test berjalan.
+
+## Langkah 5 — Test detail, ubah, dan hapus
+
+```php
+public function test_product_can_be_updated(): void
+{
+    $product = Product::factory()->create();
+
+    $response = $this->put(route('products.update', $product), [
+        'name' => 'Teh Tarik',
+        'description' => 'Teh tarik susu',
+        'price' => 15000,
+        'stock' => 10,
+    ]);
+
+    $response->assertRedirect(route('products.index'));
+    $response->assertSessionHas('success', 'Produk berhasil diperbarui.');
+    $this->assertDatabaseHas('products', [
+        'id' => $product->id,
+        'name' => 'Teh Tarik',
+        'stock' => 10,
+    ]);
+}
+
+public function test_product_can_be_deleted(): void
+{
+    $product = Product::factory()->create();
+
+    $response = $this->delete(route('products.destroy', $product));
+
+    $response->assertRedirect(route('products.index'));
+    $response->assertSessionHas('success', 'Produk berhasil dihapus.');
+    $this->assertDatabaseMissing('products', ['id' => $product->id]);
+}
+```
+
+`$this->put()` dan `$this->delete()` mengirim method HTTP yang sama dengan `@method('PUT')` dan `@method('DELETE')` di form Blade.
+
+## Final Complete Test
+
+Here's your complete `tests/Feature/ProductTest.php`:
+
+```php title="tests/Feature/ProductTest.php"
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Product;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class ProductTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->withoutVite();
+    }
+
+    public function test_index_displays_products(): void
+    {
+        Product::factory()->create(['name' => 'Kopi Susu']);
+
+        $response = $this->get(route('products.index'));
+
+        $response->assertOk();
+        $response->assertSee('Kopi Susu');
+    }
+
+    public function test_index_shows_empty_message(): void
+    {
+        $response = $this->get(route('products.index'));
+
+        $response->assertOk();
+        $response->assertSee('Belum ada data produk.');
+    }
+
+    public function test_index_paginates_ten_products_per_page(): void
+    {
+        Product::factory()->count(11)->create();
+
+        $response = $this->get(route('products.index'));
+
+        $response->assertViewHas('products', fn ($products) => $products->count() === 10);
+    }
+
+    public function test_create_page_can_be_rendered(): void
+    {
+        $response = $this->get(route('products.create'));
+
+        $response->assertOk();
+        $response->assertSee('Tambah Produk');
+    }
+
+    public function test_product_can_be_stored(): void
+    {
+        $response = $this->post(route('products.store'), [
+            'name' => 'Kopi Susu',
+            'description' => 'Kopi susu gula aren',
+            'price' => 18000,
+            'stock' => 25,
+        ]);
+
+        $response->assertRedirect(route('products.index'));
+        $response->assertSessionHas('success', 'Produk berhasil ditambahkan.');
+        $this->assertDatabaseHas('products', [
+            'name' => 'Kopi Susu',
+            'stock' => 25,
+        ]);
+    }
+
+    public function test_product_detail_can_be_shown(): void
+    {
+        $product = Product::factory()->create();
+
+        $response = $this->get(route('products.show', $product));
+
+        $response->assertOk();
+        $response->assertSee($product->name);
+    }
+
+    public function test_edit_page_can_be_rendered(): void
+    {
+        $product = Product::factory()->create();
+
+        $response = $this->get(route('products.edit', $product));
+
+        $response->assertOk();
+        $response->assertSee('Edit Produk');
+    }
+
+    public function test_product_can_be_updated(): void
+    {
+        $product = Product::factory()->create();
+
+        $response = $this->put(route('products.update', $product), [
+            'name' => 'Teh Tarik',
+            'description' => 'Teh tarik susu',
+            'price' => 15000,
+            'stock' => 10,
+        ]);
+
+        $response->assertRedirect(route('products.index'));
+        $response->assertSessionHas('success', 'Produk berhasil diperbarui.');
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'name' => 'Teh Tarik',
+            'stock' => 10,
+        ]);
+    }
+
+    public function test_product_can_be_deleted(): void
+    {
+        $product = Product::factory()->create();
+
+        $response = $this->delete(route('products.destroy', $product));
+
+        $response->assertRedirect(route('products.index'));
+        $response->assertSessionHas('success', 'Produk berhasil dihapus.');
+        $this->assertDatabaseMissing('products', ['id' => $product->id]);
+    }
+}
+```
+
+## Uji coba
+
+```bash
+php artisan test --filter=ProductTest
+```
+
+Semua test harus `PASS`. Coba "rusak" controller dengan sengaja, misalnya ganti pesan menjadi `'Produk ditambahkan.'` di `store()`, lalu jalankan lagi: `test_product_can_be_stored` langsung gagal dan menunjukkan pesan yang berbeda. Kembalikan seperti semula setelah itu.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Unable to locate file in Vite manifest` atau `Vite manifest not found` | View memanggil `@vite` tanpa aset | Panggil `$this->withoutVite()` di `setUp()` |
+| `Call to undefined method App\Models\Product::factory()` | `HasFactory` belum ditambahkan | Lihat pelajaran 02 |
+| `Session is missing expected key [success]` | Pesan flash di controller berbeda | Samakan dengan controller Modul 02 (`->with('success', ...)`) |
+| Test saling memengaruhi (jumlah data aneh) | Lupa `use RefreshDatabase;` | Tambahkan trait tersebut di class test |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa `RefreshDatabase` penting untuk test yang menyimpan data?
+- [ ] Apa yang diperiksa `assertSessionHas('success', ...)`?
+- [ ] Kenapa test tidak perlu mengirim token CSRF?

@@ -1,0 +1,339 @@
+---
+title: "Test Validasi StoreProductRequest dan UpdateProductRequest"
+description: "Memastikan setiap aturan validasi dan pesan error berbahasa Indonesia dari Form Request Modul 02 benar-benar bekerja, termasuk produk tidak tersimpan saat data salah."
+module: "07-testing"
+order: 4
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["testing", "validation", "form-request"]
+prerequisites: ["07-testing/03-feature-test-crud"]
+nextStep: "07-testing/05-tips-dan-latihan"
+---
+
+Pelajaran sebelumnya menguji **jalan mulus**: data benar, produk tersimpan. Bug paling sering justru muncul di **jalan berlubang**: data kosong, harga negatif, stok pecahan. Di pelajaran ini kamu menguji setiap aturan di `StoreProductRequest` dan `UpdateProductRequest` dari Modul 02:
+
+| Field | Aturan | Pesan yang diuji |
+|---|---|---|
+| `name` | `required`, `string`, `max:255` | `Nama produk wajib diisi.`, `Nama produk maksimal 255 karakter.` |
+| `description` | `nullable`, `string` | (boleh kosong) |
+| `price` | `required`, `numeric`, `min:0` | `Harga wajib diisi.`, `Harga harus berupa angka.`, `Harga tidak boleh negatif.` |
+| `stock` | `required`, `integer`, `min:0` | `Stok wajib diisi.`, `Stok harus berupa bilangan bulat.`, `Stok tidak boleh negatif.` |
+
+## Langkah 1 — Helper data valid
+
+Setiap test validasi butuh data yang **hampir** benar, dengan satu field dirusak. Supaya tidak menulis ulang empat field di setiap test, buat helper kecil di class test:
+
+```php
+private function validData(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Kopi Susu',
+        'description' => 'Kopi susu gula aren',
+        'price' => 18000,
+        'stock' => 25,
+    ], $overrides);
+}
+```
+
+`$this->validData(['price' => -5])` menghasilkan data valid, kecuali harga yang negatif.
+
+## Langkah 2 — Data kosong ditolak
+
+Saat validasi gagal di web, Laravel me-redirect kembali dan menyimpan error ke session. `assertSessionHasErrors()` memeriksa error itu. Kalau diberi array asosiatif, ia juga memeriksa **isi pesannya**:
+
+```php
+public function test_store_requires_name_price_and_stock(): void
+{
+    $response = $this->post(route('products.store'), []);
+
+    $response->assertSessionHasErrors([
+        'name' => 'Nama produk wajib diisi.',
+        'price' => 'Harga wajib diisi.',
+        'stock' => 'Stok wajib diisi.',
+    ]);
+    $this->assertDatabaseCount('products', 0);
+}
+```
+
+`assertDatabaseCount('products', 0)` memastikan tidak ada produk yang ikut tersimpan.
+
+## Langkah 3 — Setiap aturan punya test
+
+```php
+public function test_store_rejects_negative_price(): void
+{
+    $response = $this->post(route('products.store'), $this->validData(['price' => -5]));
+
+    $response->assertSessionHasErrors(['price' => 'Harga tidak boleh negatif.']);
+}
+
+public function test_store_rejects_decimal_stock(): void
+{
+    $response = $this->post(route('products.store'), $this->validData(['stock' => 2.5]));
+
+    $response->assertSessionHasErrors(['stock' => 'Stok harus berupa bilangan bulat.']);
+}
+
+public function test_store_allows_empty_description(): void
+{
+    $response = $this->post(route('products.store'), $this->validData(['description' => null]));
+
+    $response->assertValid();
+    $this->assertDatabaseHas('products', ['name' => 'Kopi Susu']);
+}
+```
+
+`assertValid()` adalah kebalikan dari `assertSessionHasErrors()`: memastikan **tidak ada** error validasi. Test terakhir membuktikan bahwa `description` memang opsional (`nullable`).
+
+## Langkah 4 — Validasi saat update
+
+`UpdateProductRequest` punya aturan yang sama. Kita uji juga bahwa produk **tidak berubah** saat data salah:
+
+```php
+public function test_update_rejects_empty_name_and_keeps_product(): void
+{
+    $product = Product::factory()->create(['name' => 'Kopi Susu']);
+
+    $response = $this->put(
+        route('products.update', $product),
+        $this->validData(['name' => ''])
+    );
+
+    $response->assertSessionHasErrors(['name' => 'Nama produk wajib diisi.']);
+    $this->assertDatabaseHas('products', [
+        'id' => $product->id,
+        'name' => 'Kopi Susu',
+    ]);
+}
+```
+
+## Final Complete Test
+
+Ini `ProductTest` dari pelajaran 03 ditambah semua test validasi.
+
+Here's your complete `tests/Feature/ProductTest.php`:
+
+```php title="tests/Feature/ProductTest.php"
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Product;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class ProductTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->withoutVite();
+    }
+
+    private function validData(array $overrides = []): array
+    {
+        return array_merge([
+            'name' => 'Kopi Susu',
+            'description' => 'Kopi susu gula aren',
+            'price' => 18000,
+            'stock' => 25,
+        ], $overrides);
+    }
+
+    public function test_index_displays_products(): void
+    {
+        Product::factory()->create(['name' => 'Kopi Susu']);
+
+        $response = $this->get(route('products.index'));
+
+        $response->assertOk();
+        $response->assertSee('Kopi Susu');
+    }
+
+    public function test_index_shows_empty_message(): void
+    {
+        $response = $this->get(route('products.index'));
+
+        $response->assertOk();
+        $response->assertSee('Belum ada data produk.');
+    }
+
+    public function test_index_paginates_ten_products_per_page(): void
+    {
+        Product::factory()->count(11)->create();
+
+        $response = $this->get(route('products.index'));
+
+        $response->assertViewHas('products', fn ($products) => $products->count() === 10);
+    }
+
+    public function test_create_page_can_be_rendered(): void
+    {
+        $response = $this->get(route('products.create'));
+
+        $response->assertOk();
+        $response->assertSee('Tambah Produk');
+    }
+
+    public function test_product_can_be_stored(): void
+    {
+        $response = $this->post(route('products.store'), $this->validData());
+
+        $response->assertRedirect(route('products.index'));
+        $response->assertSessionHas('success', 'Produk berhasil ditambahkan.');
+        $this->assertDatabaseHas('products', [
+            'name' => 'Kopi Susu',
+            'stock' => 25,
+        ]);
+    }
+
+    public function test_product_detail_can_be_shown(): void
+    {
+        $product = Product::factory()->create();
+
+        $response = $this->get(route('products.show', $product));
+
+        $response->assertOk();
+        $response->assertSee($product->name);
+    }
+
+    public function test_edit_page_can_be_rendered(): void
+    {
+        $product = Product::factory()->create();
+
+        $response = $this->get(route('products.edit', $product));
+
+        $response->assertOk();
+        $response->assertSee('Edit Produk');
+    }
+
+    public function test_product_can_be_updated(): void
+    {
+        $product = Product::factory()->create();
+
+        $response = $this->put(route('products.update', $product), $this->validData([
+            'name' => 'Teh Tarik',
+            'stock' => 10,
+        ]));
+
+        $response->assertRedirect(route('products.index'));
+        $response->assertSessionHas('success', 'Produk berhasil diperbarui.');
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'name' => 'Teh Tarik',
+            'stock' => 10,
+        ]);
+    }
+
+    public function test_product_can_be_deleted(): void
+    {
+        $product = Product::factory()->create();
+
+        $response = $this->delete(route('products.destroy', $product));
+
+        $response->assertRedirect(route('products.index'));
+        $response->assertSessionHas('success', 'Produk berhasil dihapus.');
+        $this->assertDatabaseMissing('products', ['id' => $product->id]);
+    }
+
+    public function test_store_requires_name_price_and_stock(): void
+    {
+        $response = $this->post(route('products.store'), []);
+
+        $response->assertSessionHasErrors([
+            'name' => 'Nama produk wajib diisi.',
+            'price' => 'Harga wajib diisi.',
+            'stock' => 'Stok wajib diisi.',
+        ]);
+        $this->assertDatabaseCount('products', 0);
+    }
+
+    public function test_store_rejects_name_longer_than_255_characters(): void
+    {
+        $response = $this->post(route('products.store'), $this->validData([
+            'name' => str_repeat('a', 256),
+        ]));
+
+        $response->assertSessionHasErrors(['name' => 'Nama produk maksimal 255 karakter.']);
+    }
+
+    public function test_store_rejects_non_numeric_price(): void
+    {
+        $response = $this->post(route('products.store'), $this->validData(['price' => 'gratis']));
+
+        $response->assertSessionHasErrors(['price' => 'Harga harus berupa angka.']);
+    }
+
+    public function test_store_rejects_negative_price(): void
+    {
+        $response = $this->post(route('products.store'), $this->validData(['price' => -5]));
+
+        $response->assertSessionHasErrors(['price' => 'Harga tidak boleh negatif.']);
+    }
+
+    public function test_store_rejects_decimal_stock(): void
+    {
+        $response = $this->post(route('products.store'), $this->validData(['stock' => 2.5]));
+
+        $response->assertSessionHasErrors(['stock' => 'Stok harus berupa bilangan bulat.']);
+    }
+
+    public function test_store_rejects_negative_stock(): void
+    {
+        $response = $this->post(route('products.store'), $this->validData(['stock' => -1]));
+
+        $response->assertSessionHasErrors(['stock' => 'Stok tidak boleh negatif.']);
+    }
+
+    public function test_store_allows_empty_description(): void
+    {
+        $response = $this->post(route('products.store'), $this->validData(['description' => null]));
+
+        $response->assertValid();
+        $this->assertDatabaseHas('products', ['name' => 'Kopi Susu']);
+    }
+
+    public function test_update_rejects_empty_name_and_keeps_product(): void
+    {
+        $product = Product::factory()->create(['name' => 'Kopi Susu']);
+
+        $response = $this->put(
+            route('products.update', $product),
+            $this->validData(['name' => ''])
+        );
+
+        $response->assertSessionHasErrors(['name' => 'Nama produk wajib diisi.']);
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'name' => 'Kopi Susu',
+        ]);
+    }
+}
+```
+
+## Uji coba
+
+```bash
+php artisan test --filter=ProductTest
+```
+
+Lalu buktikan test-nya benar-benar menjaga aturan: ubah sementara `'price' => ['required', 'numeric', 'min:0']` di `StoreProductRequest` menjadi tanpa `min:0`, jalankan test lagi, dan lihat `test_store_rejects_negative_price` gagal. Kembalikan aturannya setelah itu.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Session missing error: name` | Aturan atau nama field di Form Request berbeda | Samakan dengan `StoreProductRequest` Modul 02 |
+| Pesan error yang diterima berbahasa Inggris | Method `messages()` belum ditulis di Form Request | Salin `messages()` dari Modul 02 |
+| Semua test validasi gagal dengan status 403 | `authorize()` masih `false` | Ubah menjadi `return true;` |
+
+## Cek pemahamanmu
+
+- [ ] Apa beda `assertSessionHasErrors()` dan `assertValid()`?
+- [ ] Kenapa test validasi update juga memeriksa bahwa produk tidak berubah?
+- [ ] Bagaimana cara membuktikan sebuah test benar-benar menjaga aturan validasi?

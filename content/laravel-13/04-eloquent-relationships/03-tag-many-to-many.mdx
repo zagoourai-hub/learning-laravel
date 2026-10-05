@@ -1,0 +1,703 @@
+---
+title: "Tag: Relasi Many to Many"
+description: "Buat tabel tags dan tabel pivot product_tag, relasi belongsToMany di kedua model, simpan pilihan tag dengan sync(), dan checkbox tag di form produk."
+module: "04-eloquent-relationships"
+order: 3
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 30
+tags: ["eloquent", "belongsToMany", "pivot", "sync", "validation"]
+prerequisites: ["04-eloquent-relationships/02-category-one-to-many"]
+nextStep: "04-eloquent-relationships/04-eager-loading"
+---
+
+Kategori bersifat "satu produk, satu kategori". **Tag** berbeda: satu produk bisa diberi beberapa tag (Promo, Baru, Terlaris), dan satu tag dipakai banyak produk. Ini relasi **many to many**, dan butuh satu tabel tambahan: **tabel pivot**.
+
+Pelajaran ini melanjutkan kode akhir pelajaran sebelumnya (Category sudah ada).
+
+## Yang akan kamu buat
+
+- Tabel `tags` dan model `Tag`
+- Tabel pivot `product_tag`
+- Relasi `belongsToMany()` di `Product` dan `Tag`
+- Checkbox tag di form tambah dan edit, disimpan dengan `sync()`
+- Daftar tag di halaman detail produk
+
+---
+
+## Langkah 1 — Buat model Tag beserta migration
+
+```bash
+php artisan make:model Tag -m
+```
+
+Here's your complete `database/migrations/xxxx_xx_xx_xxxxxx_create_tags_table.php`:
+
+```php title="database/migrations/xxxx_xx_xx_xxxxxx_create_tags_table.php"
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('tags', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('tags');
+    }
+};
+```
+
+## Langkah 2 — Buat tabel pivot product_tag
+
+Relasi many to many butuh tiga tabel: `products`, `tags`, dan tabel perantara yang mencatat pasangan produk–tag. Nama tabel perantara mengikuti konvensi Eloquent: nama kedua model dalam bentuk tunggal, urut **alfabetis**. `product` lebih dulu dari `tag`, jadi namanya `product_tag`.
+
+```bash
+php artisan make:migration create_product_tag_table
+```
+
+Here's your complete `database/migrations/xxxx_xx_xx_xxxxxx_create_product_tag_table.php`:
+
+```php title="database/migrations/xxxx_xx_xx_xxxxxx_create_product_tag_table.php"
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('product_tag', function (Blueprint $table) {
+            $table->foreignId('product_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('tag_id')->constrained()->cascadeOnDelete();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('product_tag');
+    }
+};
+```
+
+`cascadeOnDelete()` di kedua kolom memastikan baris pivot ikut terhapus saat produk atau tag-nya dihapus, jadi tidak ada pasangan yang menunjuk data yang sudah tidak ada.
+
+Pastikan migration `create_tags_table` dibuat **lebih dulu** dari `create_product_tag_table` (urutan nama file), karena foreign key `tag_id` butuh tabel `tags` sudah ada. Lalu jalankan:
+
+```bash
+php artisan migrate
+```
+
+## Langkah 3 — Atur model Tag
+
+Here's your complete `app/Models/Tag.php`:
+
+```php title="app/Models/Tag.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+
+class Tag extends Model
+{
+    protected $fillable = [
+        'name',
+    ];
+
+    public function products(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class);
+    }
+}
+```
+
+## Langkah 4 — Tambahkan relasi tags di model Product
+
+Berbeda dengan `category_id`, tag **tidak** disimpan sebagai kolom di tabel `products`, jadi `$fillable` tidak berubah. Cukup tambahkan method `tags()`.
+
+Here's your complete `app/Models/Product.php`:
+
+```php title="app/Models/Product.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+
+class Product extends Model
+{
+    protected $fillable = [
+        'name',
+        'description',
+        'price',
+        'stock',
+        'category_id',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'price' => 'decimal:2',
+            'stock' => 'integer',
+        ];
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    public function tags(): BelongsToMany
+    {
+        return $this->belongsToMany(Tag::class);
+    }
+}
+```
+
+## Langkah 5 — Isi beberapa tag lewat Tinker
+
+```bash
+php artisan tinker
+```
+
+```php
+App\Models\Tag::create(['name' => 'Promo']);
+App\Models\Tag::create(['name' => 'Baru']);
+App\Models\Tag::create(['name' => 'Terlaris']);
+```
+
+Ketik `exit` untuk keluar.
+
+## Langkah 6 — Validasi tags di kedua Form Request
+
+Form akan mengirim tag sebagai array ID, misalnya `tags[]=1&tags[]=3`. Gabungan aturan `array` dan `exists:tags,id` memvalidasi bahwa **setiap** ID di array itu ada di tabel `tags`, dan Laravel memeriksanya dengan satu query saja.
+
+Here's your complete `app/Http/Requests/StoreProductRequest.php`:
+
+```php title="app/Http/Requests/StoreProductRequest.php"
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class StoreProductRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'category_id' => ['nullable', 'exists:categories,id'],
+            'tags' => ['nullable', 'array', 'exists:tags,id'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'Nama produk wajib diisi.',
+            'name.max' => 'Nama produk maksimal 255 karakter.',
+            'price.required' => 'Harga wajib diisi.',
+            'price.numeric' => 'Harga harus berupa angka.',
+            'price.min' => 'Harga tidak boleh negatif.',
+            'stock.required' => 'Stok wajib diisi.',
+            'stock.integer' => 'Stok harus berupa bilangan bulat.',
+            'stock.min' => 'Stok tidak boleh negatif.',
+            'category_id.exists' => 'Kategori yang dipilih tidak ditemukan.',
+            'tags.array' => 'Format tag tidak valid.',
+            'tags.exists' => 'Ada tag yang tidak ditemukan.',
+        ];
+    }
+}
+```
+
+Here's your complete `app/Http/Requests/UpdateProductRequest.php`:
+
+```php title="app/Http/Requests/UpdateProductRequest.php"
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class UpdateProductRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'category_id' => ['nullable', 'exists:categories,id'],
+            'tags' => ['nullable', 'array', 'exists:tags,id'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'Nama produk wajib diisi.',
+            'name.max' => 'Nama produk maksimal 255 karakter.',
+            'price.required' => 'Harga wajib diisi.',
+            'price.numeric' => 'Harga harus berupa angka.',
+            'price.min' => 'Harga tidak boleh negatif.',
+            'stock.required' => 'Stok wajib diisi.',
+            'stock.integer' => 'Stok harus berupa bilangan bulat.',
+            'stock.min' => 'Stok tidak boleh negatif.',
+            'category_id.exists' => 'Kategori yang dipilih tidak ditemukan.',
+            'tags.array' => 'Format tag tidak valid.',
+            'tags.exists' => 'Ada tag yang tidak ditemukan.',
+        ];
+    }
+}
+```
+
+## Langkah 7 — Simpan tag dengan sync()
+
+Sekarang `$request->validated()` berisi `tags`, padahal `tags` bukan kolom di tabel `products`. Karena itu kita pisahkan:
+
+- Data kolom produk diambil dengan `$request->safe()->except('tags')`: semua data tervalidasi **kecuali** `tags`.
+- Tag disimpan ke tabel pivot dengan `$product->tags()->sync(...)`.
+
+```php
+public function store(StoreProductRequest $request): RedirectResponse
+{
+    $product = Product::create($request->safe()->except('tags'));
+
+    $product->tags()->sync($request->input('tags', []));
+
+    return to_route('products.index')
+        ->with('success', 'Produk berhasil ditambahkan.');
+}
+```
+
+```php
+public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+{
+    $product->update($request->safe()->except('tags'));
+
+    $product->tags()->sync($request->input('tags', []));
+
+    return to_route('products.index')
+        ->with('success', 'Produk berhasil diperbarui.');
+}
+```
+
+Kenapa `sync()` dan bukan `attach()`? `attach()` hanya **menambah** baris pivot. `sync()` membuat isi pivot **sama persis** dengan array yang diberikan: ID yang tidak ada di array dihapus. Saat edit, tag yang tidak lagi dicentang ikut terlepas. Kalau tidak ada tag yang dicentang, field `tags` tidak terkirim sama sekali, sehingga `input('tags', [])` mengembalikan array kosong dan `sync([])` melepas semua tag.
+
+`create()` dan `edit()` juga perlu mengirim daftar tag ke form.
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/ProductController.php`:
+
+```php title="app/Http/Controllers/ProductController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Category;
+use App\Models\Product;
+use App\Models\Tag;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
+
+class ProductController extends Controller
+{
+    public function index(): View
+    {
+        $products = Product::latest()->paginate(10);
+
+        return view('products.index', compact('products'));
+    }
+
+    public function create(): View
+    {
+        $categories = Category::orderBy('name')->get();
+        $tags = Tag::orderBy('name')->get();
+
+        return view('products.create', compact('categories', 'tags'));
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        $product = Product::create($request->safe()->except('tags'));
+
+        $product->tags()->sync($request->input('tags', []));
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil ditambahkan.');
+    }
+
+    public function show(Product $product): View
+    {
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product): View
+    {
+        $categories = Category::orderBy('name')->get();
+        $tags = Tag::orderBy('name')->get();
+
+        return view('products.edit', compact('product', 'categories', 'tags'));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        $product->update($request->safe()->except('tags'));
+
+        $product->tags()->sync($request->input('tags', []));
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil diperbarui.');
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        $product->delete();
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil dihapus.');
+    }
+}
+```
+
+`destroy()` tidak berubah: baris pivot produk itu terhapus otomatis berkat `cascadeOnDelete()` di migration pivot.
+
+## Langkah 8 — Checkbox tag di form
+
+Tambahkan blok ini tepat di bawah dropdown Kategori:
+
+```blade
+<fieldset>
+    <legend class="mb-1 block text-sm font-medium">Tag</legend>
+    <div class="flex flex-wrap gap-4">
+        @foreach ($tags as $tag)
+            <label class="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox" name="tags[]" value="{{ $tag->id }}"
+                       @checked(in_array($tag->id, old('tags', [])))>
+                {{ $tag->name }}
+            </label>
+        @endforeach
+    </div>
+    @error('tags')
+        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+    @enderror
+</fieldset>
+```
+
+- `name="tags[]"` (dengan kurung siku) membuat browser mengirim semua checkbox yang dicentang sebagai array.
+- `@checked(...)` menambahkan atribut `checked` kalau kondisinya benar.
+- Di form edit, nilai awalnya adalah tag milik produk: `old('tags', $product->tags->pluck('id')->all())`.
+
+Here's your complete `resources/views/products/create.blade.php`:
+
+```blade title="resources/views/products/create.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Tambah Produk')
+
+@section('content')
+    <h1 class="mb-6 text-2xl font-bold">Tambah Produk</h1>
+
+    <form action="{{ route('products.store') }}" method="POST"
+          class="space-y-5 rounded-md bg-white p-6 shadow">
+        @csrf
+
+        <div>
+            <label for="name" class="mb-1 block text-sm font-medium">Nama</label>
+            <input type="text" id="name" name="name" value="{{ old('name') }}"
+                   class="w-full rounded-md border border-gray-300 px-3 py-2">
+            @error('name')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="description" class="mb-1 block text-sm font-medium">Deskripsi</label>
+            <textarea id="description" name="description" rows="4"
+                      class="w-full rounded-md border border-gray-300 px-3 py-2">{{ old('description') }}</textarea>
+            @error('description')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="category_id" class="mb-1 block text-sm font-medium">Kategori</label>
+            <select id="category_id" name="category_id"
+                    class="w-full rounded-md border border-gray-300 px-3 py-2">
+                <option value="">Tanpa kategori</option>
+                @foreach ($categories as $category)
+                    <option value="{{ $category->id }}" @selected(old('category_id') == $category->id)>
+                        {{ $category->name }}
+                    </option>
+                @endforeach
+            </select>
+            @error('category_id')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <fieldset>
+            <legend class="mb-1 block text-sm font-medium">Tag</legend>
+            <div class="flex flex-wrap gap-4">
+                @foreach ($tags as $tag)
+                    <label class="inline-flex items-center gap-2 text-sm">
+                        <input type="checkbox" name="tags[]" value="{{ $tag->id }}"
+                               @checked(in_array($tag->id, old('tags', [])))>
+                        {{ $tag->name }}
+                    </label>
+                @endforeach
+            </div>
+            @error('tags')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </fieldset>
+
+        <div class="grid gap-5 sm:grid-cols-2">
+            <div>
+                <label for="price" class="mb-1 block text-sm font-medium">Harga</label>
+                <input type="number" step="0.01" id="price" name="price" value="{{ old('price') }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('price')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="stock" class="mb-1 block text-sm font-medium">Stok</label>
+                <input type="number" id="stock" name="stock" value="{{ old('stock', 0) }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('stock')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+                Simpan
+            </button>
+            <a href="{{ route('products.index') }}" class="rounded-md border px-4 py-2 hover:bg-gray-50">
+                Batal
+            </a>
+        </div>
+    </form>
+@endsection
+```
+
+Here's your complete `resources/views/products/edit.blade.php`:
+
+```blade title="resources/views/products/edit.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Edit Produk')
+
+@section('content')
+    <h1 class="mb-6 text-2xl font-bold">Edit Produk</h1>
+
+    <form action="{{ route('products.update', $product) }}" method="POST"
+          class="space-y-5 rounded-md bg-white p-6 shadow">
+        @csrf
+        @method('PUT')
+
+        <div>
+            <label for="name" class="mb-1 block text-sm font-medium">Nama</label>
+            <input type="text" id="name" name="name" value="{{ old('name', $product->name) }}"
+                   class="w-full rounded-md border border-gray-300 px-3 py-2">
+            @error('name')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="description" class="mb-1 block text-sm font-medium">Deskripsi</label>
+            <textarea id="description" name="description" rows="4"
+                      class="w-full rounded-md border border-gray-300 px-3 py-2">{{ old('description', $product->description) }}</textarea>
+            @error('description')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="category_id" class="mb-1 block text-sm font-medium">Kategori</label>
+            <select id="category_id" name="category_id"
+                    class="w-full rounded-md border border-gray-300 px-3 py-2">
+                <option value="">Tanpa kategori</option>
+                @foreach ($categories as $category)
+                    <option value="{{ $category->id }}" @selected(old('category_id', $product->category_id) == $category->id)>
+                        {{ $category->name }}
+                    </option>
+                @endforeach
+            </select>
+            @error('category_id')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <fieldset>
+            <legend class="mb-1 block text-sm font-medium">Tag</legend>
+            <div class="flex flex-wrap gap-4">
+                @foreach ($tags as $tag)
+                    <label class="inline-flex items-center gap-2 text-sm">
+                        <input type="checkbox" name="tags[]" value="{{ $tag->id }}"
+                               @checked(in_array($tag->id, old('tags', $product->tags->pluck('id')->all())))>
+                        {{ $tag->name }}
+                    </label>
+                @endforeach
+            </div>
+            @error('tags')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </fieldset>
+
+        <div class="grid gap-5 sm:grid-cols-2">
+            <div>
+                <label for="price" class="mb-1 block text-sm font-medium">Harga</label>
+                <input type="number" step="0.01" id="price" name="price" value="{{ old('price', $product->price) }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('price')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="stock" class="mb-1 block text-sm font-medium">Stok</label>
+                <input type="number" id="stock" name="stock" value="{{ old('stock', $product->stock) }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('stock')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+                Perbarui
+            </button>
+            <a href="{{ route('products.index') }}" class="rounded-md border px-4 py-2 hover:bg-gray-50">
+                Batal
+            </a>
+        </div>
+    </form>
+@endsection
+```
+
+## Langkah 9 — Tampilkan tag di halaman detail
+
+`$product->tags` berisi collection model `Tag`. `pluck('name')->join(', ')` mengubahnya menjadi teks seperti `Promo, Terlaris`.
+
+Here's your complete `resources/views/products/show.blade.php`:
+
+```blade title="resources/views/products/show.blade.php"
+@extends('layouts.app')
+
+@section('title', $product->name)
+
+@section('content')
+    <div class="rounded-md bg-white p-6 shadow">
+        <h1 class="mb-4 text-2xl font-bold">{{ $product->name }}</h1>
+
+        <dl class="space-y-3 text-sm">
+            <div>
+                <dt class="font-semibold">Deskripsi</dt>
+                <dd>{{ $product->description ?: '-' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Kategori</dt>
+                <dd>{{ $product->category?->name ?? '-' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Tag</dt>
+                <dd>{{ $product->tags->pluck('name')->join(', ') ?: '-' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Harga</dt>
+                <dd>Rp {{ number_format($product->price, 0, ',', '.') }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Stok</dt>
+                <dd>{{ $product->stock }}</dd>
+            </div>
+        </dl>
+
+        <div class="mt-6 flex gap-3">
+            <a href="{{ route('products.edit', $product) }}"
+               class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">Edit</a>
+            <a href="{{ route('products.index') }}"
+               class="rounded-md border px-4 py-2 hover:bg-gray-50">Kembali</a>
+        </div>
+    </div>
+@endsection
+```
+
+---
+
+## Uji coba
+
+1. **Tambah Produk** → centang **Promo** dan **Baru**, simpan → buka **Detail**, tag tampil `Promo, Baru` (urutan bisa berbeda).
+2. **Edit** produk itu → kedua checkbox sudah tercentang. Hapus centang **Promo**, centang **Terlaris**, simpan → detail menampilkan `Baru, Terlaris`.
+3. Edit lagi, hapus semua centang, simpan → tag menjadi **-**.
+4. Hapus produk → baris pivotnya ikut hilang. Cek di Tinker: `DB::table('product_tag')->count()`.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `no such table: product_tag` | Migration pivot belum jalan atau namanya salah (misalnya `tag_product`) | Namai `product_tag` (urut alfabetis), lalu `php artisan migrate` |
+| Error foreign key saat migrate | Migration pivot berjalan sebelum `create_tags_table` | Pastikan file `create_tags_table` punya timestamp lebih awal |
+| Hanya satu tag yang tersimpan | Atribut `name="tags"` tanpa `[]` | Pakai `name="tags[]"` |
+| Tag yang dihapus centangnya tetap ada | Memakai `attach()` saat update | Pakai `sync()` |
+| `table products has no column named tags` | Seluruh `validated()` dikirim ke `create()`/`update()` | Pakai `$request->safe()->except('tags')` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa relasi many to many butuh tabel pivot, sedangkan one to many tidak?
+- [ ] Dari mana nama `product_tag` berasal?
+- [ ] Apa beda `attach()` dan `sync()`, dan kenapa form edit memakai `sync()`?
+- [ ] Kenapa `tags` harus dikeluarkan dari data yang dikirim ke `Product::create()`?

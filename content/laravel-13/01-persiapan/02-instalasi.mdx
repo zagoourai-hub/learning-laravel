@@ -1,0 +1,137 @@
+---
+title: "Instalasi PHP, Composer, dan Laravel 13"
+description: "Siapkan PHP 8.3+, Composer, Laravel installer, dan Node.js, lalu buat proyek laravel13-crud dan jalankan dengan composer run dev."
+module: "01-persiapan"
+order: 2
+level: "pemula"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["instalasi", "composer", "php", "artisan"]
+prerequisites: ["01-persiapan/01-roadmap-laravel"]
+nextStep: "01-persiapan/03-struktur-folder"
+---
+
+Di pelajaran ini kamu menyiapkan semua alat yang dibutuhkan, lalu membuat proyek **laravel13-crud**, proyek yang sama yang akan kamu kembangkan di Modul 02 dan seterusnya.
+
+## Yang dibutuhkan
+
+- **PHP 8.3 sampai 8.5**: Laravel 13 membutuhkan minimal PHP 8.3.
+- **Composer**: pengelola paket PHP.
+- **Laravel installer**: perintah `laravel new` untuk membuat proyek.
+- **Node.js dan NPM** (atau Bun): untuk meng-compile aset frontend (CSS/JS) lewat Vite.
+
+## Langkah 1 — Pasang PHP, Composer, dan Laravel installer
+
+Pilih **salah satu** cara di bawah.
+
+### Cara A: skrip php.new (satu perintah)
+
+Skrip resmi ini memasang PHP, Composer, dan Laravel installer sekaligus.
+
+**Windows** — jalankan di PowerShell **sebagai administrator**:
+
+```shell
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://php.new/install/windows/8.4'))
+```
+
+**macOS:**
+
+```bash
+/bin/bash -c "$(curl -fsSL https://php.new/install/mac/8.4)"
+```
+
+**Linux:**
+
+```bash
+/bin/bash -c "$(curl -fsSL https://php.new/install/linux/8.4)"
+```
+
+Setelah selesai, tutup lalu buka lagi terminal agar perintah barunya dikenali.
+
+### Cara B: sudah punya PHP dan Composer
+
+Kalau PHP 8.3+ dan Composer sudah terpasang, cukup pasang Laravel installer secara global:
+
+```bash
+composer global require laravel/installer
+```
+
+### Cara C: Laravel Herd (macOS & Windows)
+
+Laravel Herd adalah lingkungan pengembangan Laravel dan PHP yang native untuk macOS dan Windows. Herd sudah membawa PHP, Nginx, serta perintah `php`, `composer`, `laravel`, `node`, dan `npm`. Di macOS, aplikasi di dalam folder `~/Herd` otomatis bisa dibuka lewat domain `.test`.
+
+> **Tips:** Pilih satu cara saja. Memasang beberapa versi PHP dari cara berbeda bisa membuat terminal memakai versi yang tidak kamu harapkan.
+
+Cek versi PHP yang aktif:
+
+```bash
+php -v
+```
+
+Pastikan hasilnya PHP 8.3 atau lebih baru.
+
+## Langkah 2 — Buat proyek baru
+
+Pilih salah satu:
+
+```bash
+laravel new laravel13-crud
+```
+
+atau tanpa installer:
+
+```bash
+composer create-project laravel/laravel laravel13-crud
+```
+
+Kalau memakai `laravel new`, installer akan menanyakan beberapa pilihan: **testing framework**, **database**, dan **starter kit**. Untuk mengikuti jalur belajar ini kamu tidak memerlukan starter kit, karena tampilan CRUD akan kita bangun sendiri dengan Blade di Modul 02.
+
+Pengguna Herd di Windows bisa membuat proyek langsung di folder Herd:
+
+```shell
+cd ~\Herd
+laravel new laravel13-crud
+cd laravel13-crud
+herd open
+```
+
+## Langkah 3 — Jalankan aplikasi
+
+Masuk ke folder proyek dan jalankan semuanya sekaligus (server, queue, dan Vite):
+
+```bash
+cd laravel13-crud
+composer run dev
+```
+
+`composer run dev` menjalankan tiga hal sekaligus: server pengembangan Laravel, queue worker, dan server Vite. Buka `http://localhost:8000` di browser. Kalau halaman sambutan Laravel muncul, instalasi berhasil.
+
+> **Penting:** kalau muncul error `Unable to locate file in Vite manifest`, dependensi frontend belum terpasang atau aset belum di-build. Jalankan `npm install && npm run build` sekali, lalu ulangi `composer run dev`.
+
+Biarkan terminal ini tetap menyala selama kamu bekerja. Untuk perintah `php artisan`, buka terminal kedua di folder yang sama.
+
+## Database: SQLite sudah siap
+
+Secara default, aplikasi Laravel memakai **SQLite**. File `database/database.sqlite` dibuat dan migration dijalankan otomatis saat proyek dibuat, jadi kamu tidak perlu memasang MySQL untuk mengikuti tutorial ini.
+
+Kalau nanti ingin memakai MySQL atau PostgreSQL: ubah variabel `DB_*` di file `.env`, buat database-nya, lalu jalankan migration:
+
+```bash
+php artisan migrate
+```
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Composer/installer menolak karena versi PHP | PHP yang aktif lebih lama dari 8.3 | Pasang PHP 8.3–8.5, cek ulang dengan `php -v` |
+| `laravel` tidak dikenali setelah instalasi | Terminal belum dimuat ulang | Tutup dan buka lagi terminal |
+| `Unable to locate file in Vite manifest` | Aset frontend belum di-build | Jalankan `npm install && npm run build`, lalu `composer run dev` |
+
+## Cek pemahamanmu
+
+- [ ] Versi PHP berapa yang dibutuhkan Laravel 13?
+- [ ] Apa saja yang dijalankan oleh `composer run dev`?
+- [ ] Di mana file database SQLite default berada?
+- [ ] Apa yang perlu diubah kalau ingin memakai MySQL?

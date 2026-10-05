@@ -1,0 +1,375 @@
+---
+title: "Register, Login, dan Logout Manual"
+description: "Bangun AuthController dengan Auth::attempt, Auth::login, dan Auth::logout, form registrasi dan login Blade, route dengan middleware guest, serta redirectUsersTo."
+module: "05-autentikasi"
+order: 2
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 30
+tags: ["autentikasi", "login", "register", "logout", "session"]
+prerequisites: ["05-autentikasi/01-autentikasi-dan-starter-kit"]
+nextStep: "05-autentikasi/03-melindungi-route"
+---
+
+Di pelajaran ini kita membuat tiga alur: **register** (buat akun lalu langsung masuk), **login**, dan **logout**. Semuanya ditangani satu controller, `AuthController`.
+
+## Yang akan kamu buat
+
+- `AuthController` dengan method `showRegister`, `register`, `showLogin`, `login`, `logout`
+- View `auth/register.blade.php` dan `auth/login.blade.php`
+- Route register dan login khusus tamu (middleware `guest`), dan route logout khusus user yang sudah login
+
+---
+
+## Langkah 1 — Buat AuthController dan view
+
+```bash
+php artisan make:controller AuthController
+php artisan make:view auth.register
+php artisan make:view auth.login
+```
+
+Kita tidak memakai `--resource` karena controller ini bukan CRUD.
+
+## Langkah 2 — Register: buat akun lalu langsung login
+
+```php
+public function register(Request $request): RedirectResponse
+{
+    $validated = $request->validate([
+        'name' => ['required', 'string', 'max:255'],
+        'email' => ['required', 'email', 'max:255', 'unique:users'],
+        'password' => ['required', 'confirmed', Password::min(8)],
+    ]);
+
+    $user = User::create([
+        'name' => $validated['name'],
+        'email' => $validated['email'],
+        'password' => Hash::make($validated['password']),
+    ]);
+
+    Auth::login($user);
+
+    $request->session()->regenerate();
+
+    return to_route('products.index')
+        ->with('success', 'Akun berhasil dibuat. Selamat datang!');
+}
+```
+
+- `unique:users` menolak email yang sudah terdaftar di tabel `users`.
+- `confirmed` mewajibkan field `password_confirmation` yang isinya sama dengan `password`.
+- `Password::min(8)` mewajibkan password minimal 8 karakter.
+- `Hash::make()` menyimpan password dalam bentuk hash, **bukan** teks asli.
+- `Auth::login($user)` langsung memasukkan user yang baru dibuat, jadi dia tidak perlu login lagi.
+- `$request->session()->regenerate()` membuat ID session baru untuk mencegah serangan *session fixation*.
+
+## Langkah 3 — Login dengan Auth::attempt
+
+```php
+public function login(Request $request): RedirectResponse
+{
+    $credentials = $request->validate([
+        'email' => ['required', 'email'],
+        'password' => ['required'],
+    ]);
+
+    if (Auth::attempt($credentials)) {
+        $request->session()->regenerate();
+
+        return redirect()->intended(route('products.index'));
+    }
+
+    return back()->withErrors([
+        'email' => 'Email atau password salah.',
+    ])->onlyInput('email');
+}
+```
+
+- `Auth::attempt()` mencari user berdasarkan email, mencocokkan password dengan hash di database, dan mengembalikan `true` kalau berhasil.
+- `redirect()->intended(...)` mengembalikan user ke halaman yang tadinya ingin ia buka sebelum diminta login. Kalau tidak ada, user diarahkan ke daftar produk.
+- Saat gagal, `back()->withErrors(...)` kembali ke form dengan pesan error, dan `onlyInput('email')` hanya mengisi ulang email (password tidak pernah dikirim balik).
+
+## Langkah 4 — Logout
+
+```php
+public function logout(Request $request): RedirectResponse
+{
+    Auth::logout();
+
+    $request->session()->invalidate();
+
+    $request->session()->regenerateToken();
+
+    return to_route('login');
+}
+```
+
+Setelah `Auth::logout()`, session dihapus dengan `invalidate()`, lalu token CSRF diganti dengan `regenerateToken()`. Ini urutan yang direkomendasikan dokumentasi Laravel.
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/AuthController.php`:
+
+```php title="app/Http/Controllers/AuthController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
+use Illuminate\View\View;
+
+class AuthController extends Controller
+{
+    public function showRegister(): View
+    {
+        return view('auth.register');
+    }
+
+    public function register(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users'],
+            'password' => ['required', 'confirmed', Password::min(8)],
+        ]);
+
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+        ]);
+
+        Auth::login($user);
+
+        $request->session()->regenerate();
+
+        return to_route('products.index')
+            ->with('success', 'Akun berhasil dibuat. Selamat datang!');
+    }
+
+    public function showLogin(): View
+    {
+        return view('auth.login');
+    }
+
+    public function login(Request $request): RedirectResponse
+    {
+        $credentials = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required'],
+        ]);
+
+        if (Auth::attempt($credentials)) {
+            $request->session()->regenerate();
+
+            return redirect()->intended(route('products.index'));
+        }
+
+        return back()->withErrors([
+            'email' => 'Email atau password salah.',
+        ])->onlyInput('email');
+    }
+
+    public function logout(Request $request): RedirectResponse
+    {
+        Auth::logout();
+
+        $request->session()->invalidate();
+
+        $request->session()->regenerateToken();
+
+        return to_route('login');
+    }
+}
+```
+
+## Langkah 5 — Form registrasi dan login
+
+Kedua form memakai layout dan gaya yang sama dengan form produk di Modul 02.
+
+Here's your complete `resources/views/auth/register.blade.php`:
+
+```blade title="resources/views/auth/register.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Daftar Akun')
+
+@section('content')
+    <div class="mx-auto max-w-md">
+        <h1 class="mb-6 text-2xl font-bold">Daftar Akun</h1>
+
+        <form action="{{ route('register') }}" method="POST"
+              class="space-y-5 rounded-md bg-white p-6 shadow">
+            @csrf
+
+            <div>
+                <label for="name" class="mb-1 block text-sm font-medium">Nama</label>
+                <input type="text" id="name" name="name" value="{{ old('name') }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('name')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="email" class="mb-1 block text-sm font-medium">Email</label>
+                <input type="email" id="email" name="email" value="{{ old('email') }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('email')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="password" class="mb-1 block text-sm font-medium">Password</label>
+                <input type="password" id="password" name="password"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('password')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="password_confirmation" class="mb-1 block text-sm font-medium">Ulangi Password</label>
+                <input type="password" id="password_confirmation" name="password_confirmation"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+            </div>
+
+            <button type="submit" class="w-full rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+                Daftar
+            </button>
+
+            <p class="text-center text-sm text-gray-600">
+                Sudah punya akun?
+                <a href="{{ route('login') }}" class="text-indigo-600 hover:text-indigo-900">Login</a>
+            </p>
+        </form>
+    </div>
+@endsection
+```
+
+Field password sengaja **tidak** memakai `old()`. Password tidak boleh diisi ulang otomatis ke halaman.
+
+Here's your complete `resources/views/auth/login.blade.php`:
+
+```blade title="resources/views/auth/login.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Login')
+
+@section('content')
+    <div class="mx-auto max-w-md">
+        <h1 class="mb-6 text-2xl font-bold">Login</h1>
+
+        <form action="{{ route('login') }}" method="POST"
+              class="space-y-5 rounded-md bg-white p-6 shadow">
+            @csrf
+
+            <div>
+                <label for="email" class="mb-1 block text-sm font-medium">Email</label>
+                <input type="email" id="email" name="email" value="{{ old('email') }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('email')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="password" class="mb-1 block text-sm font-medium">Password</label>
+                <input type="password" id="password" name="password"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('password')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <button type="submit" class="w-full rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+                Login
+            </button>
+
+            <p class="text-center text-sm text-gray-600">
+                Belum punya akun?
+                <a href="{{ route('register') }}" class="text-indigo-600 hover:text-indigo-900">Daftar</a>
+            </p>
+        </form>
+    </div>
+@endsection
+```
+
+## Langkah 6 — Daftarkan route
+
+Route register dan login dibungkus middleware `guest`, jadi hanya bisa dibuka oleh pengunjung yang **belum** login. Route logout memakai middleware `auth` dan method POST (bukan GET), supaya tidak bisa dipicu oleh link sembarangan.
+
+Here's your complete `routes/web.php`:
+
+```php title="routes/web.php"
+<?php
+
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ProductController;
+use Illuminate\Support\Facades\Route;
+
+Route::redirect('/', '/products');
+
+Route::middleware('guest')->group(function () {
+    Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
+    Route::post('/login', [AuthController::class, 'login']);
+});
+
+Route::post('/logout', [AuthController::class, 'logout'])
+    ->middleware('auth')
+    ->name('logout');
+
+Route::resource('products', ProductController::class);
+```
+
+Nama route `login` **wajib** dipakai persis. Middleware `auth` (yang kita pasang di pelajaran berikutnya) secara default mengarahkan tamu ke route bernama `login`.
+
+## Langkah 7 — Arahkan user yang sudah login
+
+Middleware `guest` secara default mengarahkan user yang sudah login ke route bernama `dashboard` atau `home`. Proyek kita tidak punya keduanya, jadi arahkan ke daftar produk.
+
+Buka `bootstrap/app.php`. Di dalam closure `withMiddleware(...)` yang sudah ada, tambahkan satu baris `redirectUsersTo`:
+
+```php title="bootstrap/app.php (bagian withMiddleware)"
+->withMiddleware(function (Middleware $middleware): void {
+    $middleware->redirectUsersTo('/products');
+})
+```
+
+Bagian lain dari `bootstrap/app.php` tidak perlu diubah.
+
+---
+
+## Uji coba
+
+1. Buka `/register` → daftar dengan password kurang dari 8 karakter → muncul error validasi.
+2. Daftar dengan data benar → masuk ke daftar produk dengan pesan "Akun berhasil dibuat. Selamat datang!".
+3. Buka `/login` saat sudah login → diarahkan ke `/products` (berkat `redirectUsersTo`).
+4. Tombol logout baru dibuat di pelajaran berikutnya. Untuk menguji login gagal, buka jendela private/incognito, lalu buka `/login` dan masuk dengan password salah → muncul "Email atau password salah." dan email tetap terisi.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Route [login] not defined` | Route login tidak diberi nama `login` | Tambahkan `->name('login')` |
+| `The password field confirmation does not match.` | Nama field konfirmasi salah | Namai persis `password_confirmation` |
+| `419 Page Expired` saat login | `@csrf` lupa di form | Tambahkan `@csrf` di bawah tag `<form>` |
+| Login selalu gagal padahal password benar | Password disimpan tanpa `Hash::make()` | Daftar ulang setelah memakai `Hash::make()` |
+| `Route [dashboard] not defined` setelah login | `redirectUsersTo` belum diatur | Tambahkan `redirectUsersTo('/products')` di `bootstrap/app.php` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa session perlu di-`regenerate()` setelah login?
+- [ ] Apa fungsi `redirect()->intended()`?
+- [ ] Kenapa logout memakai method POST, bukan GET?
+- [ ] Apa beda middleware `guest` dan `auth`?

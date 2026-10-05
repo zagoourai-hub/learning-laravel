@@ -1,0 +1,163 @@
+---
+title: "Model Factory: ProductFactory"
+description: "Membuat ProductFactory dengan fake(), menambahkan HasFactory ke model Product, dan membuat banyak produk palsu untuk test maupun mencoba pagination."
+module: "07-testing"
+order: 2
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["testing", "factory", "faker", "eloquent"]
+prerequisites: ["07-testing/01-pengenalan-testing"]
+nextStep: "07-testing/03-feature-test-crud"
+---
+
+Hampir setiap test butuh data. Menulis `Product::create([...])` lengkap dengan nama, harga, dan stok di setiap test itu melelahkan. **Model factory** adalah "cetakan" yang membuat produk palsu dengan data acak dalam satu baris:
+
+```php
+Product::factory()->count(11)->create();
+```
+
+Di pelajaran ini kamu membuat `ProductFactory` dan menghubungkannya dengan model `Product` dari Modul 02.
+
+## Langkah 1 — Buat factory
+
+```bash
+php artisan make:factory ProductFactory
+```
+
+File baru muncul di `database/factories/ProductFactory.php`.
+
+## Langkah 2 — Isi definition()
+
+Method `definition()` mengembalikan nilai default untuk setiap kolom. Factory memakai helper `fake()`, yang memberi akses ke library Faker untuk membuat data acak.
+
+Kolomnya sama dengan migration Modul 02: `name`, `description`, `price`, `stock`.
+
+Here's your complete `database/factories/ProductFactory.php`:
+
+```php title="database/factories/ProductFactory.php"
+<?php
+
+namespace Database\Factories;
+
+use Illuminate\Database\Eloquent\Factories\Factory;
+
+/**
+ * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Product>
+ */
+class ProductFactory extends Factory
+{
+    /**
+     * Define the model's default state.
+     *
+     * @return array<string, mixed>
+     */
+    public function definition(): array
+    {
+        return [
+            'name' => fake()->words(2, true),
+            'description' => fake()->sentence(),
+            'price' => fake()->numberBetween(1000, 500000),
+            'stock' => fake()->numberBetween(0, 100),
+        ];
+    }
+
+    /**
+     * Indicate that the product is out of stock.
+     */
+    public function outOfStock(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'stock' => 0,
+        ]);
+    }
+}
+```
+
+`outOfStock()` adalah **state**: variasi kecil dari data default. `Product::factory()->outOfStock()->create()` membuat produk dengan stok 0.
+
+## Langkah 3 — Tambahkan HasFactory ke model Product
+
+Method statis `Product::factory()` berasal dari trait `HasFactory`. Model `Product` di Modul 02 belum memakainya, jadi kita tambahkan. Laravel otomatis mencari factory bernama `ProductFactory` di namespace `Database\Factories`, sesuai konvensi nama model + `Factory`.
+
+Hanya dua baris yang berubah dari versi Modul 02: `use Illuminate\Database\Eloquent\Factories\HasFactory;` dan `use HasFactory;` di dalam class. `$fillable` dan `casts()` tetap sama.
+
+Here's your complete `app/Models/Product.php`:
+
+```php title="app/Models/Product.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Product extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name',
+        'description',
+        'price',
+        'stock',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'price' => 'decimal:2',
+            'stock' => 'integer',
+        ];
+    }
+}
+```
+
+## Langkah 4 — Cara memakai factory
+
+```php
+// Satu produk, disimpan ke database
+$product = Product::factory()->create();
+
+// 11 produk sekaligus
+Product::factory()->count(11)->create();
+
+// Mengganti sebagian nilai default
+$product = Product::factory()->create(['name' => 'Kopi Susu']);
+
+// Tanpa menyimpan ke database
+$product = Product::factory()->make();
+```
+
+`create()` menyimpan ke database, sedangkan `make()` hanya membuat objek di memori.
+
+## Uji coba: isi data untuk mencoba pagination
+
+Factory juga berguna di luar test. Di checklist Modul 02 kamu diminta menambahkan lebih dari 10 produk untuk melihat pagination. Sekarang cukup satu perintah di Tinker:
+
+```bash
+php artisan tinker
+```
+
+```php
+App\Models\Product::factory()->count(15)->create();
+```
+
+Buka `http://localhost:8000/products`: halaman pertama menampilkan 10 produk, dan link halaman muncul di bawah tabel.
+
+> **Penting:** perintah di Tinker menulis ke database aplikasi sungguhan (`database/database.sqlite`). Di dalam test, database akan di-reset otomatis (pelajaran 03), jadi data test tidak mengotori data aplikasimu.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Call to undefined method App\Models\Product::factory()` | Trait `HasFactory` belum ditambahkan | Tambahkan `use HasFactory;` di model `Product` |
+| `Class "Database\Factories\ProductFactory" not found` | Nama file/class factory tidak sesuai konvensi | Nama harus `ProductFactory` di `database/factories` |
+| `no such table: products` saat memakai factory di Tinker | Migration belum dijalankan | `php artisan migrate` |
+
+## Cek pemahamanmu
+
+- [ ] Apa fungsi `definition()` di factory?
+- [ ] Kenapa model `Product` perlu trait `HasFactory`?
+- [ ] Apa beda `create()` dan `make()`?

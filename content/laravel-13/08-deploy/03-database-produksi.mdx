@@ -1,0 +1,88 @@
+---
+title: "Database Produksi dan migrate --force"
+description: "Hubungkan laravel13-crud ke database produksi (SQLite atau MySQL) dan jalankan migration tabel products dengan aman di server."
+module: "08-deploy"
+order: 3
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["deploy", "database", "migration", "mysql", "sqlite"]
+nextStep: "08-deploy/04-tempat-deploy"
+---
+
+Tabel `products` dari Modul 02 dibuat oleh migration. Di server, tabel itu harus dibuat lagi di database produksi. Pelajaran ini membahas dua pilihan database yang sudah kamu kenal di Modul 02, yaitu SQLite (default) dan MySQL, lalu cara menjalankan migration di produksi.
+
+## Langkah 1 — Pilih database
+
+### Opsi A: SQLite (default Laravel 13)
+
+Proyek Laravel 13 baru memakai SQLite secara default, dengan file `database/database.sqlite`. Kalau tetap memakai SQLite di server, dokumentasi menyarankan mengisi `DB_DATABASE` dengan **path absolut** ke file database:
+
+```ini title=".env (database SQLite)"
+DB_CONNECTION=sqlite
+DB_DATABASE=/absolute/path/to/database.sqlite
+```
+
+Ganti `/absolute/path/to/database.sqlite` dengan path sebenarnya di server, misalnya path ke folder `database` milik proyek `laravel13-crud`. File SQLite bisa dibuat dengan:
+
+```bash
+touch database/database.sqlite
+```
+
+### Opsi B: MySQL
+
+Sama seperti bagian "Catatan: memakai MySQL" di Modul 02, ubah variabel `DB_*` di `.env`:
+
+```ini title=".env"
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=laravel13_crud
+DB_USERNAME=root
+DB_PASSWORD=
+```
+
+Buat database kosong `laravel13_crud` di server MySQL terlebih dahulu.
+
+> **Penting:** sesuaikan `DB_HOST`, `DB_USERNAME`, dan `DB_PASSWORD` dengan kredensial database di servermu. Nilai di atas adalah contoh lokal; di produksi sebaiknya pakai user database khusus dengan password, bukan `root` tanpa password.
+
+## Langkah 2 — Jalankan migration dengan `--force`
+
+Beberapa operasi migration bisa merusak data. Untuk mencegah kecelakaan, Laravel meminta konfirmasi saat migration dijalankan di lingkungan produksi (`APP_ENV=production`). Di skrip deploy tidak ada orang yang bisa menjawab konfirmasi itu, jadi pakai flag `--force`:
+
+```bash
+php artisan migrate --force
+```
+
+Perintah ini membuat tabel `products` (dan tabel bawaan Laravel lainnya) sesuai migration `..._create_products_table.php` dari Modul 02.
+
+## Langkah 3 — Kalau server lebih dari satu
+
+Kalau aplikasimu berjalan di beberapa server sekaligus dan semuanya menjalankan deploy bersamaan, pakai `--isolated` supaya hanya satu server yang menjalankan migration pada satu waktu:
+
+```bash
+php artisan migrate --isolated
+```
+
+Untuk satu server saja, `php artisan migrate --force` sudah cukup.
+
+## Langkah 4 — Cek hasilnya
+
+Buka `https://domainmu/products`. Kalau tabel kosong muncul dengan tulisan "Belum ada data produk.", koneksi database dan migration berhasil. Coba tambah satu produk lewat tombol **+ Tambah Produk**.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Perintah migrate berhenti menunggu konfirmasi | Lingkungan produksi meminta konfirmasi | Tambahkan `--force` |
+| `could not find driver` | Ekstensi PDO untuk database belum aktif | Aktifkan ekstensi PDO MySQL atau SQLite di PHP server |
+| `Access denied for user` | `DB_USERNAME` atau `DB_PASSWORD` salah | Periksa kredensial di `.env`, lalu jalankan lagi `php artisan config:cache` |
+| `Unknown database 'laravel13_crud'` | Database belum dibuat | Buat database `laravel13_crud` di MySQL |
+| Error file database SQLite tidak ditemukan | File SQLite belum ada atau path salah | Buat file dengan `touch` dan pakai path absolut di `DB_DATABASE` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa `php artisan migrate` di produksi butuh `--force`?
+- [ ] Kapan `--isolated` diperlukan?
+- [ ] Bagaimana menulis `DB_DATABASE` untuk SQLite di server?

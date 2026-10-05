@@ -1,0 +1,94 @@
+---
+title: "Latihan: Remember Me, Pesan Penolakan, dan Starter Kit"
+description: "Latihan mandiri Modul 05: checkbox remember me, pesan penolakan dari policy dengan Response::deny dan denyAsNotFound, mengatur redirectGuestsTo, dan mencoba starter kit di proyek baru."
+module: "05-autentikasi"
+order: 6
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 45
+tags: ["latihan", "autentikasi", "authorization", "starter-kit"]
+prerequisites: ["05-autentikasi/05-authorization-policy"]
+---
+
+Kamu sudah punya login, route yang terlindungi, produk milik user, dan policy. Latihan berikut menambah fitur yang biasa ada di aplikasi sungguhan. Semuanya memakai fitur yang didokumentasikan Laravel 13, dengan petunjuk singkat.
+
+## Latihan 1 — Checkbox "Ingat saya"
+
+**Target:** user yang mencentang "Ingat saya" tetap login walaupun browser ditutup.
+
+**Petunjuk:**
+
+- Tambahkan checkbox ke form login:
+
+```blade
+<label class="inline-flex items-center gap-2 text-sm">
+    <input type="checkbox" name="remember" value="1">
+    Ingat saya
+</label>
+```
+
+- Kirim nilai boolean sebagai argumen kedua `Auth::attempt()`:
+
+```php
+if (Auth::attempt($credentials, $request->boolean('remember'))) {
+    // ...
+}
+```
+
+- Fitur ini butuh kolom `remember_token` di tabel `users`. Migration bawaan Laravel sudah menyertakannya, jadi tidak ada migration baru.
+
+## Latihan 2 — Pesan penolakan dari policy
+
+**Target:** saat user B membuka produk milik A, tampilkan pesan yang jelas, atau sembunyikan sama sekali bahwa produk itu ada.
+
+**Petunjuk:** method policy boleh mengembalikan `Illuminate\Auth\Access\Response` alih-alih `bool`:
+
+```php
+use Illuminate\Auth\Access\Response;
+
+public function update(User $user, Product $product): Response
+{
+    return $user->id === $product->user_id
+        ? Response::allow()
+        : Response::deny('Kamu bukan pemilik produk ini.');
+}
+```
+
+`Gate::authorize()` meneruskan pesan itu ke respons 403. Coba juga `Response::denyAsNotFound()` untuk `view`: user lain akan mendapat **404**, seolah-olah produknya tidak ada. Pola ini umum dipakai supaya ID data milik orang lain tidak bisa ditebak-tebak.
+
+## Latihan 3 — Atur tujuan redirect tamu
+
+**Target:** pahami dan atur ke mana tamu diarahkan saat membuka halaman yang butuh login.
+
+**Petunjuk:** middleware `auth` secara default mengarahkan tamu ke route bernama `login`. Tujuan itu bisa diubah di `bootstrap/app.php`, di closure `withMiddleware(...)` yang sama tempat kamu menulis `redirectUsersTo`:
+
+```php
+$middleware->redirectGuestsTo('/login');
+```
+
+Ganti tujuannya sementara, misalnya ke `/register`, lalu buka `/products` dalam jendela private untuk melihat efeknya. Kembalikan seperti semula setelah selesai.
+
+## Latihan 4 — Coba starter kit di proyek baru
+
+**Target:** bandingkan login buatanmu dengan starter kit resmi.
+
+**Petunjuk:** buat proyek **terpisah** (jangan di `laravel13-crud`):
+
+```bash
+laravel new starter-demo
+```
+
+- Saat ditanya, pilih starter kit **Livewire** (paling dekat dengan Blade) atau React/Vue/Svelte kalau kamu sudah familiar.
+- Jalankan aplikasinya, lalu coba register, login, reset password, dan halaman pengaturan profil.
+- Perhatikan bahwa semua alur autentikasi itu diurus **Laravel Fortify**. Bandingkan dengan `AuthController` yang kamu tulis sendiri: konsep yang sama (validasi, `Auth::attempt`, regenerasi session) bekerja di baliknya.
+
+## Checklist siap lanjut
+
+Kamu siap lanjut ke modul berikutnya kalau bisa:
+
+- [ ] Menjelaskan beda autentikasi dan authorization.
+- [ ] Membuat login, register, dan logout dengan `Auth::attempt`, `Auth::login`, dan `Auth::logout`, termasuk regenerasi session.
+- [ ] Melindungi grup route dengan middleware `auth` dan `guest`.
+- [ ] Mengisi pemilik data dari user yang login, bukan dari input form.
+- [ ] Menulis policy dan memakainya lewat `Gate::authorize` di controller serta `@can` di Blade.

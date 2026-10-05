@@ -1,0 +1,657 @@
+---
+title: "Category: Relasi One to Many"
+description: "Tambahkan tabel categories, kolom category_id dengan foreign key, relasi hasMany dan belongsTo, validasi exists, dan pilihan kategori di form produk."
+module: "04-eloquent-relationships"
+order: 2
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 30
+tags: ["eloquent", "hasMany", "belongsTo", "migration", "foreign-key", "validation"]
+prerequisites: ["04-eloquent-relationships/01-pengenalan-relasi"]
+nextStep: "04-eloquent-relationships/03-tag-many-to-many"
+---
+
+Di pelajaran ini setiap produk bisa masuk ke satu **kategori** (Makanan, Minuman, Alat Tulis, dan seterusnya). Satu kategori punya banyak produk: inilah relasi **one to many**. Kita mulai dari kode akhir Modul 02 dan hanya mengubah bagian yang dibutuhkan.
+
+## Yang akan kamu buat
+
+- Tabel `categories` dan model `Category`
+- Kolom `category_id` di tabel `products` lengkap dengan foreign key
+- Relasi `Category::products()` dan `Product::category()`
+- Dropdown kategori di form tambah dan edit, dengan validasi
+- Nama kategori di halaman detail produk
+
+---
+
+## Langkah 1 — Buat model Category beserta migration
+
+```bash
+php artisan make:model Category -m
+```
+
+Opsi `-m` membuat file migration `..._create_categories_table.php` sekaligus. Isi migration-nya:
+
+Here's your complete `database/migrations/xxxx_xx_xx_xxxxxx_create_categories_table.php`:
+
+```php title="database/migrations/xxxx_xx_xx_xxxxxx_create_categories_table.php"
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('categories', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('categories');
+    }
+};
+```
+
+## Langkah 2 — Tambah kolom category_id ke tabel products
+
+Tabel `products` sudah ada dan mungkin sudah berisi data, jadi kita **tidak** mengubah migration lama. Buat migration baru yang mengubah tabel:
+
+```bash
+php artisan make:migration add_category_id_to_products_table
+```
+
+Laravel membaca nama migration ini dan menebak bahwa kamu ingin mengubah tabel `products`.
+
+Here's your complete `database/migrations/xxxx_xx_xx_xxxxxx_add_category_id_to_products_table.php`:
+
+```php title="database/migrations/xxxx_xx_xx_xxxxxx_add_category_id_to_products_table.php"
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('products', function (Blueprint $table) {
+            $table->foreignId('category_id')
+                ->nullable()
+                ->constrained()
+                ->nullOnDelete();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('products', function (Blueprint $table) {
+            $table->dropForeign(['category_id']);
+            $table->dropColumn('category_id');
+        });
+    }
+};
+```
+
+Arti tiap bagian:
+
+- `foreignId('category_id')` membuat kolom `UNSIGNED BIGINT`, tipe yang sama dengan `id()` di tabel `categories`.
+- `nullable()` mengizinkan produk tanpa kategori. Ini penting karena produk yang sudah ada belum punya kategori. Modifier seperti `nullable()` harus ditulis **sebelum** `constrained()`.
+- `constrained()` membuat foreign key ke tabel `categories` kolom `id`, ditebak dari nama kolom `category_id`.
+- `nullOnDelete()` membuat `category_id` produk menjadi `null` kalau kategorinya dihapus, jadi produknya tidak ikut hilang.
+- Di `down()`, foreign key dihapus dulu dengan `dropForeign(['category_id'])`, baru kolomnya.
+
+Jalankan kedua migration:
+
+```bash
+php artisan migrate
+```
+
+## Langkah 3 — Atur model Category
+
+Here's your complete `app/Models/Category.php`:
+
+```php title="app/Models/Category.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Category extends Model
+{
+    protected $fillable = [
+        'name',
+    ];
+
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class);
+    }
+}
+```
+
+`hasMany(Product::class)` otomatis mencari kolom `category_id` di tabel `products`, karena nama model induknya `Category`.
+
+## Langkah 4 — Tambahkan relasi di model Product
+
+Dua perubahan dari versi Modul 02: `category_id` masuk `$fillable` supaya ikut tersimpan lewat `Product::create()` dan `update()`, lalu method `category()`.
+
+Here's your complete `app/Models/Product.php`:
+
+```php title="app/Models/Product.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class Product extends Model
+{
+    protected $fillable = [
+        'name',
+        'description',
+        'price',
+        'stock',
+        'category_id',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'price' => 'decimal:2',
+            'stock' => 'integer',
+        ];
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(Category::class);
+    }
+}
+```
+
+## Langkah 5 — Isi beberapa kategori lewat Tinker
+
+Kita belum membuat halaman CRUD kategori (itu bagian latihan), jadi isi datanya lewat **Tinker**, REPL bawaan Laravel:
+
+```bash
+php artisan tinker
+```
+
+Di dalam Tinker, jalankan:
+
+```php
+App\Models\Category::create(['name' => 'Makanan']);
+App\Models\Category::create(['name' => 'Minuman']);
+App\Models\Category::create(['name' => 'Alat Tulis']);
+```
+
+Ketik `exit` untuk keluar.
+
+## Langkah 6 — Validasi category_id di kedua Form Request
+
+Aturan `exists:categories,id` memastikan nilai yang dikirim benar-benar ada di kolom `id` tabel `categories`. Tanpa aturan ini, pengguna bisa mengirim ID sembarang lewat form yang dimodifikasi.
+
+Here's your complete `app/Http/Requests/StoreProductRequest.php`:
+
+```php title="app/Http/Requests/StoreProductRequest.php"
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class StoreProductRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'category_id' => ['nullable', 'exists:categories,id'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'Nama produk wajib diisi.',
+            'name.max' => 'Nama produk maksimal 255 karakter.',
+            'price.required' => 'Harga wajib diisi.',
+            'price.numeric' => 'Harga harus berupa angka.',
+            'price.min' => 'Harga tidak boleh negatif.',
+            'stock.required' => 'Stok wajib diisi.',
+            'stock.integer' => 'Stok harus berupa bilangan bulat.',
+            'stock.min' => 'Stok tidak boleh negatif.',
+            'category_id.exists' => 'Kategori yang dipilih tidak ditemukan.',
+        ];
+    }
+}
+```
+
+Here's your complete `app/Http/Requests/UpdateProductRequest.php`:
+
+```php title="app/Http/Requests/UpdateProductRequest.php"
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class UpdateProductRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'category_id' => ['nullable', 'exists:categories,id'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'Nama produk wajib diisi.',
+            'name.max' => 'Nama produk maksimal 255 karakter.',
+            'price.required' => 'Harga wajib diisi.',
+            'price.numeric' => 'Harga harus berupa angka.',
+            'price.min' => 'Harga tidak boleh negatif.',
+            'stock.required' => 'Stok wajib diisi.',
+            'stock.integer' => 'Stok harus berupa bilangan bulat.',
+            'stock.min' => 'Stok tidak boleh negatif.',
+            'category_id.exists' => 'Kategori yang dipilih tidak ditemukan.',
+        ];
+    }
+}
+```
+
+## Langkah 7 — Kirim daftar kategori ke form
+
+Form tambah dan edit butuh daftar kategori untuk dropdown. Hanya `create()` dan `edit()` yang berubah:
+
+```php
+public function create(): View
+{
+    $categories = Category::orderBy('name')->get();
+
+    return view('products.create', compact('categories'));
+}
+```
+
+```php
+public function edit(Product $product): View
+{
+    $categories = Category::orderBy('name')->get();
+
+    return view('products.edit', compact('product', 'categories'));
+}
+```
+
+`store()` dan `update()` **tidak perlu diubah**: `$request->validated()` sekarang ikut berisi `category_id`, dan kolom itu sudah ada di `$fillable`.
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/ProductController.php`:
+
+```php title="app/Http/Controllers/ProductController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Category;
+use App\Models\Product;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
+
+class ProductController extends Controller
+{
+    public function index(): View
+    {
+        $products = Product::latest()->paginate(10);
+
+        return view('products.index', compact('products'));
+    }
+
+    public function create(): View
+    {
+        $categories = Category::orderBy('name')->get();
+
+        return view('products.create', compact('categories'));
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        Product::create($request->validated());
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil ditambahkan.');
+    }
+
+    public function show(Product $product): View
+    {
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product): View
+    {
+        $categories = Category::orderBy('name')->get();
+
+        return view('products.edit', compact('product', 'categories'));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        $product->update($request->validated());
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil diperbarui.');
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        $product->delete();
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil dihapus.');
+    }
+}
+```
+
+## Langkah 8 — Dropdown kategori di form
+
+Tambahkan blok ini di antara field Deskripsi dan field Harga/Stok:
+
+```blade
+<div>
+    <label for="category_id" class="mb-1 block text-sm font-medium">Kategori</label>
+    <select id="category_id" name="category_id"
+            class="w-full rounded-md border border-gray-300 px-3 py-2">
+        <option value="">Tanpa kategori</option>
+        @foreach ($categories as $category)
+            <option value="{{ $category->id }}" @selected(old('category_id') == $category->id)>
+                {{ $category->name }}
+            </option>
+        @endforeach
+    </select>
+    @error('category_id')
+        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+    @enderror
+</div>
+```
+
+Directive `@selected(...)` menambahkan atribut `selected` kalau kondisinya benar. Opsi pertama bernilai kosong supaya produk boleh tanpa kategori; aturan `nullable` di Form Request menerima nilai kosong itu.
+
+Di form edit, nilai awalnya diambil dari produk: `old('category_id', $product->category_id)`. Sama seperti field lain, `old()` tetap diprioritaskan agar pilihan tidak hilang saat validasi gagal.
+
+Here's your complete `resources/views/products/create.blade.php`:
+
+```blade title="resources/views/products/create.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Tambah Produk')
+
+@section('content')
+    <h1 class="mb-6 text-2xl font-bold">Tambah Produk</h1>
+
+    <form action="{{ route('products.store') }}" method="POST"
+          class="space-y-5 rounded-md bg-white p-6 shadow">
+        @csrf
+
+        <div>
+            <label for="name" class="mb-1 block text-sm font-medium">Nama</label>
+            <input type="text" id="name" name="name" value="{{ old('name') }}"
+                   class="w-full rounded-md border border-gray-300 px-3 py-2">
+            @error('name')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="description" class="mb-1 block text-sm font-medium">Deskripsi</label>
+            <textarea id="description" name="description" rows="4"
+                      class="w-full rounded-md border border-gray-300 px-3 py-2">{{ old('description') }}</textarea>
+            @error('description')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="category_id" class="mb-1 block text-sm font-medium">Kategori</label>
+            <select id="category_id" name="category_id"
+                    class="w-full rounded-md border border-gray-300 px-3 py-2">
+                <option value="">Tanpa kategori</option>
+                @foreach ($categories as $category)
+                    <option value="{{ $category->id }}" @selected(old('category_id') == $category->id)>
+                        {{ $category->name }}
+                    </option>
+                @endforeach
+            </select>
+            @error('category_id')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div class="grid gap-5 sm:grid-cols-2">
+            <div>
+                <label for="price" class="mb-1 block text-sm font-medium">Harga</label>
+                <input type="number" step="0.01" id="price" name="price" value="{{ old('price') }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('price')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="stock" class="mb-1 block text-sm font-medium">Stok</label>
+                <input type="number" id="stock" name="stock" value="{{ old('stock', 0) }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('stock')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+                Simpan
+            </button>
+            <a href="{{ route('products.index') }}" class="rounded-md border px-4 py-2 hover:bg-gray-50">
+                Batal
+            </a>
+        </div>
+    </form>
+@endsection
+```
+
+Here's your complete `resources/views/products/edit.blade.php`:
+
+```blade title="resources/views/products/edit.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Edit Produk')
+
+@section('content')
+    <h1 class="mb-6 text-2xl font-bold">Edit Produk</h1>
+
+    <form action="{{ route('products.update', $product) }}" method="POST"
+          class="space-y-5 rounded-md bg-white p-6 shadow">
+        @csrf
+        @method('PUT')
+
+        <div>
+            <label for="name" class="mb-1 block text-sm font-medium">Nama</label>
+            <input type="text" id="name" name="name" value="{{ old('name', $product->name) }}"
+                   class="w-full rounded-md border border-gray-300 px-3 py-2">
+            @error('name')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="description" class="mb-1 block text-sm font-medium">Deskripsi</label>
+            <textarea id="description" name="description" rows="4"
+                      class="w-full rounded-md border border-gray-300 px-3 py-2">{{ old('description', $product->description) }}</textarea>
+            @error('description')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="category_id" class="mb-1 block text-sm font-medium">Kategori</label>
+            <select id="category_id" name="category_id"
+                    class="w-full rounded-md border border-gray-300 px-3 py-2">
+                <option value="">Tanpa kategori</option>
+                @foreach ($categories as $category)
+                    <option value="{{ $category->id }}" @selected(old('category_id', $product->category_id) == $category->id)>
+                        {{ $category->name }}
+                    </option>
+                @endforeach
+            </select>
+            @error('category_id')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div class="grid gap-5 sm:grid-cols-2">
+            <div>
+                <label for="price" class="mb-1 block text-sm font-medium">Harga</label>
+                <input type="number" step="0.01" id="price" name="price" value="{{ old('price', $product->price) }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('price')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="stock" class="mb-1 block text-sm font-medium">Stok</label>
+                <input type="number" id="stock" name="stock" value="{{ old('stock', $product->stock) }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('stock')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+                Perbarui
+            </button>
+            <a href="{{ route('products.index') }}" class="rounded-md border px-4 py-2 hover:bg-gray-50">
+                Batal
+            </a>
+        </div>
+    </form>
+@endsection
+```
+
+## Langkah 9 — Tampilkan kategori di halaman detail
+
+Di halaman detail, `$product->category` mengembalikan model `Category`, atau `null` kalau produk belum punya kategori. Operator nullsafe `?->` mencegah error saat nilainya `null`.
+
+Here's your complete `resources/views/products/show.blade.php`:
+
+```blade title="resources/views/products/show.blade.php"
+@extends('layouts.app')
+
+@section('title', $product->name)
+
+@section('content')
+    <div class="rounded-md bg-white p-6 shadow">
+        <h1 class="mb-4 text-2xl font-bold">{{ $product->name }}</h1>
+
+        <dl class="space-y-3 text-sm">
+            <div>
+                <dt class="font-semibold">Deskripsi</dt>
+                <dd>{{ $product->description ?: '-' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Kategori</dt>
+                <dd>{{ $product->category?->name ?? '-' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Harga</dt>
+                <dd>Rp {{ number_format($product->price, 0, ',', '.') }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Stok</dt>
+                <dd>{{ $product->stock }}</dd>
+            </div>
+        </dl>
+
+        <div class="mt-6 flex gap-3">
+            <a href="{{ route('products.edit', $product) }}"
+               class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">Edit</a>
+            <a href="{{ route('products.index') }}"
+               class="rounded-md border px-4 py-2 hover:bg-gray-50">Kembali</a>
+        </div>
+    </div>
+@endsection
+```
+
+Daftar produk (`index`) sengaja belum diubah. Menampilkan kategori di tabel daftar punya jebakan performa tersendiri, dan itu bahan pelajaran eager loading nanti.
+
+---
+
+## Uji coba
+
+1. Buka **Tambah Produk** → dropdown berisi Alat Tulis, Makanan, Minuman (urut nama).
+2. Simpan produk dengan kategori **Minuman** → buka **Detail**, kategori tampil.
+3. **Edit** produk itu → dropdown sudah terpilih **Minuman**. Ganti ke **Makanan** lalu simpan.
+4. Edit lagi, kosongkan nama, lalu simpan → validasi gagal, tetapi pilihan kategori tetap.
+5. Produk lama (dibuat sebelum pelajaran ini) tampil dengan kategori **-**.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `no such table: categories` | Migration belum dijalankan | `php artisan migrate` |
+| `Undefined variable $categories` di form | `create()`/`edit()` belum mengirim `$categories` | Tambahkan ke `compact(...)` |
+| Kategori tidak tersimpan, tanpa error | `category_id` belum ada di `$fillable` atau di `rules()` | Tambahkan di model dan kedua Form Request |
+| `Attempt to read property "name" on null` | Produk tanpa kategori diakses dengan `->` | Pakai `$product->category?->name ?? '-'` |
+| `Kategori yang dipilih tidak ditemukan.` | ID kategori tidak ada di tabel `categories` | Pilih kategori dari dropdown, cek isi tabel lewat Tinker |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa kita membuat migration baru alih-alih mengubah migration `create_products_table`?
+- [ ] Apa fungsi `nullable()` dan `nullOnDelete()` pada `category_id`?
+- [ ] Kenapa `store()` dan `update()` tidak perlu diubah sama sekali?
+- [ ] Apa yang dicegah aturan `exists:categories,id`?

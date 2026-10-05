@@ -1,0 +1,91 @@
+---
+title: "Tips Menjalankan Test dan Latihan"
+description: "Menjalankan test lebih cepat dengan --parallel, melihat coverage dan test paling lambat, lalu berlatih menulis test sendiri untuk CRUD Product."
+module: "07-testing"
+order: 5
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["testing", "parallel", "coverage", "latihan"]
+prerequisites: ["07-testing/04-test-validasi"]
+---
+
+Kamu sudah punya `ProductTest` yang menjaga seluruh CRUD dan validasi. Pelajaran terakhir ini berisi perintah yang berguna saat jumlah test bertambah, lalu latihan supaya kamu terbiasa menulis test sendiri.
+
+## Langkah 1 — Perintah php artisan test yang berguna
+
+| Kebutuhan | Perintah |
+|---|---|
+| Jalankan semua test | `php artisan test` |
+| Hanya suite Feature, berhenti di kegagalan pertama | `php artisan test --testsuite=Feature --stop-on-failure` |
+| Hanya class tertentu | `php artisan test --filter=ProductTest` |
+| Tampilkan 10 test paling lambat | `php artisan test --profile` |
+
+`php artisan test` meneruskan opsi tambahan ke Pest atau PHPUnit. Kamu juga bisa menjalankan keduanya langsung dengan `./vendor/bin/pest` atau `./vendor/bin/phpunit`.
+
+## Langkah 2 — Test paralel
+
+Saat test sudah ratusan, jalankan bersamaan di beberapa proses. Pasang dulu paket `brianium/paratest` sebagai dependency development:
+
+```bash
+composer require brianium/paratest --dev
+
+php artisan test --parallel
+```
+
+Jumlah proses bisa diatur:
+
+```bash
+php artisan test --parallel --processes=4
+```
+
+## Langkah 3 — Coverage: bagian mana yang belum dites?
+
+```bash
+php artisan test --coverage
+```
+
+Laporan coverage menunjukkan persentase kode yang dijalankan oleh test. Fitur ini butuh ekstensi PHP **Xdebug** atau **PCOV**. Kamu juga bisa mewajibkan batas minimum; test suite dianggap gagal kalau coverage di bawah angka itu:
+
+```bash
+php artisan test --coverage --min=80
+```
+
+> **Tips:** coverage 100% bukan tujuan. Yang penting perilaku utama aplikasi, seperti alur CRUD dan aturan validasi, sudah dijaga test.
+
+## Latihan
+
+Tambahkan test berikut ke `tests/Feature/ProductTest.php`. Semua bisa ditulis hanya dengan method yang sudah kamu pakai di modul ini.
+
+1. **Produk tidak ditemukan.** Buka `route('products.show', 9999)` dan pastikan statusnya 404 dengan `assertStatus(404)`. Route model binding dari Modul 02 yang membuat ini terjadi otomatis.
+2. **Format harga.** Buat produk dengan `'price' => 18000`, buka halaman daftar, lalu pastikan teks `Rp 18.000` tampil. Format itu berasal dari `number_format($product->price, 0, ',', '.')` di view `products/index.blade.php`.
+3. **Stok habis.** Buat produk dengan state `outOfStock()` dari `ProductFactory`, lalu pastikan `stock`-nya tersimpan sebagai `0` dengan `assertDatabaseHas`.
+4. **Hapus tidak menyentuh produk lain.** Buat dua produk, hapus satu, lalu pastikan produk kedua masih ada dan `assertDatabaseCount('products', 1)`.
+5. **Validasi update.** Kirim `put` dengan `'stock' => -1` dan pastikan error `Stok tidak boleh negatif.` muncul.
+
+Contoh jawaban latihan 1:
+
+```php
+public function test_show_returns_404_for_missing_product(): void
+{
+    $response = $this->get(route('products.show', 9999));
+
+    $response->assertStatus(404);
+}
+```
+
+## Checklist siap lanjut
+
+- [ ] `php artisan test` hijau semua
+- [ ] ExampleTest sudah disesuaikan dengan redirect `/` ke `/products`
+- [ ] `ProductFactory` dan `HasFactory` di model `Product` terpasang
+- [ ] Setiap method `ProductController` punya minimal satu test
+- [ ] Setiap aturan validasi di `StoreProductRequest` punya test dengan pesan errornya
+- [ ] Kamu pernah "merusak" kode dengan sengaja dan melihat test-nya gagal
+
+## Cek pemahamanmu
+
+- [ ] Paket apa yang dibutuhkan untuk `php artisan test --parallel`?
+- [ ] Apa yang dibutuhkan supaya `--coverage` bisa berjalan?
+- [ ] Kenapa coverage 100% bukan satu-satunya ukuran test yang baik?

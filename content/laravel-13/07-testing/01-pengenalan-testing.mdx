@@ -1,0 +1,132 @@
+---
+title: "Pengenalan Testing di Laravel 13"
+description: "Mengenal Pest dan PHPUnit, folder tests/Feature dan tests/Unit, menjalankan php artisan test, dan memperbaiki ExampleTest setelah halaman utama di-redirect ke daftar produk."
+module: "07-testing"
+order: 1
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["testing", "pest", "phpunit", "artisan"]
+prerequisites: ["02-crud-pemula/01-crud-full-controller"]
+nextStep: "07-testing/02-product-factory"
+---
+
+Selama ini kamu menguji CRUD Product dengan cara manual: buka browser, isi form, klik simpan, lihat pesan hijau. Cara itu lambat dan mudah terlewat. **Automated test** adalah kode yang melakukan pengecekan itu untukmu dalam hitungan detik, setiap kali kamu mengubah kode.
+
+Di modul ini kamu menulis test untuk CRUD Product dari Modul 02 **persis seperti adanya**: redirect ke `products.index`, pesan `Produk berhasil ditambahkan.`, pagination 10 data, dan pesan validasi berbahasa Indonesia.
+
+## Langkah 1 — Kenali struktur folder tests
+
+Dokumentasi Laravel menjelaskan bahwa Laravel langsung mendukung **Pest** dan **PHPUnit**, dengan file `phpunit.xml` yang sudah dikonfigurasi. Folder `tests` berisi:
+
+- `tests/Feature` — **feature test**: menguji potongan besar aplikasi, termasuk request HTTP ke route, controller, validasi, sampai database. Sebagian besar test-mu sebaiknya feature test.
+- `tests/Unit` — **unit test**: menguji potongan kecil kode secara terisolasi, tanpa menjalankan aplikasi Laravel.
+
+Test CRUD Product menguji alur HTTP lengkap, jadi semuanya masuk `tests/Feature`.
+
+## Langkah 2 — Pest atau PHPUnit?
+
+Keduanya didukung, dan keduanya menjalankan test yang sama baiknya. Bedanya hanya gaya penulisan:
+
+```php title="tests/Feature/ExampleTest.php (gaya Pest)"
+<?php
+
+test('basic request', function () {
+    $response = $this->get('/');
+
+    $response->assertStatus(200);
+});
+```
+
+```php title="tests/Feature/ExampleTest.php (gaya PHPUnit)"
+<?php
+
+namespace Tests\Feature;
+
+use Tests\TestCase;
+
+class ExampleTest extends TestCase
+{
+    public function test_a_basic_request(): void
+    {
+        $response = $this->get('/');
+
+        $response->assertStatus(200);
+    }
+}
+```
+
+Buka `tests/Feature/ExampleTest.php` di proyekmu untuk melihat gaya mana yang dipakai. Di modul ini kita menulis test dengan **gaya PHPUnit** (class dan method `test_...`). Method seperti `$this->get()`, `assertRedirect()`, dan `assertDatabaseHas()` sama persis di Pest, jadi isinya mudah dipindah.
+
+## Langkah 3 — Jalankan test
+
+```bash
+php artisan test
+```
+
+Saat test berjalan, Laravel otomatis memakai environment `testing` dan mengatur session serta cache ke driver `array`, sehingga data test tidak tersimpan permanen. Nilai environment khusus test bisa diatur di `phpunit.xml` atau di file `.env.testing`.
+
+## Langkah 4 — Perbaiki ExampleTest yang gagal
+
+Kalau proyekmu masih punya test bawaan yang memanggil `/` dan mengharapkan status 200, test itu akan **gagal**. Penyebabnya Modul 02: kita menulis `Route::redirect('/', '/products');`, jadi `/` sekarang menjawab dengan redirect, bukan 200.
+
+Inilah gunanya test: ia memberi tahu bahwa perilaku aplikasi berubah. Perilaku baru ini memang disengaja, jadi kita perbarui test-nya agar mengharapkan redirect ke daftar produk.
+
+Here's your complete `tests/Feature/ExampleTest.php`:
+
+```php title="tests/Feature/ExampleTest.php"
+<?php
+
+namespace Tests\Feature;
+
+use Tests\TestCase;
+
+class ExampleTest extends TestCase
+{
+    public function test_home_redirects_to_products(): void
+    {
+        $response = $this->get('/');
+
+        $response->assertRedirect('/products');
+    }
+}
+```
+
+`assertRedirect()` memastikan respons adalah redirect ke URI yang diberikan.
+
+## Langkah 5 — Membuat file test baru
+
+Untuk test berikutnya kita butuh file baru:
+
+```bash
+php artisan make:test ProductTest
+```
+
+File dibuat di `tests/Feature/ProductTest.php`. Untuk unit test, tambahkan opsi `--unit` supaya file dibuat di `tests/Unit`. Kita isi `ProductTest` di pelajaran 03.
+
+## Uji coba
+
+```bash
+php artisan test
+```
+
+Semua test harus hijau (`PASS`). Kamu juga bisa memberi opsi tambahan, misalnya berhenti di kegagalan pertama:
+
+```bash
+php artisan test --stop-on-failure
+```
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Expected response status code [200] but received 302` di ExampleTest | `/` sekarang redirect ke `/products` (Modul 02) | Ganti dengan `assertRedirect('/products')` |
+| `Class "Tests\TestCase" not found` | Namespace atau lokasi file salah | Pastikan file di `tests/Feature` dengan `namespace Tests\Feature;` |
+| Test tidak ditemukan | Nama method tidak diawali `test_` | Awali nama method dengan `test_` |
+
+## Cek pemahamanmu
+
+- [ ] Apa beda feature test dan unit test?
+- [ ] Kenapa test CRUD Product masuk `tests/Feature`?
+- [ ] Kenapa ExampleTest bawaan gagal setelah Modul 02, dan bagaimana memperbaikinya?

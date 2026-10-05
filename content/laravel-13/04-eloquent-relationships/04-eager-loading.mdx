@@ -1,0 +1,278 @@
+---
+title: "Eager Loading dan Masalah N+1"
+description: "Tampilkan kategori di daftar produk, pahami kenapa itu memicu N+1 query, perbaiki dengan with(), lalu cegah lazy loading saat development dengan preventLazyLoading()."
+module: "04-eloquent-relationships"
+order: 4
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["eloquent", "eager-loading", "n+1", "performa"]
+prerequisites: ["04-eloquent-relationships/03-tag-many-to-many"]
+nextStep: "04-eloquent-relationships/05-latihan-relasi"
+---
+
+Menampilkan nama kategori di tabel daftar produk kelihatannya cuma satu baris Blade. Tapi baris itu bisa diam-diam menjalankan **puluhan query**. Di pelajaran ini kamu melihat masalahnya, memperbaikinya dengan **eager loading**, lalu memasang pengaman supaya masalah yang sama ketahuan sejak development.
+
+## Yang akan kamu buat
+
+- Kolom Kategori di tabel daftar produk
+- Query daftar produk yang memuat kategori sekaligus dengan `with()`
+- Pengaman `Model::preventLazyLoading()` di `AppServiceProvider`
+
+---
+
+## Langkah 1 — Tambahkan kolom Kategori di daftar produk
+
+Di `resources/views/products/index.blade.php`, tambahkan header kolom:
+
+```blade
+<th class="px-6 py-3">Kategori</th>
+```
+
+dan sel datanya:
+
+```blade
+<td class="px-6 py-4">{{ $product->category?->name ?? '-' }}</td>
+```
+
+Karena jumlah kolom bertambah, `colspan` di baris "Belum ada data produk." ikut berubah dari `4` menjadi `5`.
+
+Here's your complete `resources/views/products/index.blade.php`:
+
+```blade title="resources/views/products/index.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Daftar Produk')
+
+@section('content')
+    <div class="mb-6 flex items-center justify-between">
+        <h1 class="text-2xl font-bold">Daftar Produk</h1>
+        <a href="{{ route('products.create') }}"
+           class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+            + Tambah Produk
+        </a>
+    </div>
+
+    <div class="overflow-x-auto rounded-md bg-white shadow">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50 text-left text-sm font-semibold">
+                <tr>
+                    <th class="px-6 py-3">Nama</th>
+                    <th class="px-6 py-3">Kategori</th>
+                    <th class="px-6 py-3">Harga</th>
+                    <th class="px-6 py-3">Stok</th>
+                    <th class="px-6 py-3">Aksi</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 text-sm">
+                @forelse ($products as $product)
+                    <tr>
+                        <td class="px-6 py-4">{{ $product->name }}</td>
+                        <td class="px-6 py-4">{{ $product->category?->name ?? '-' }}</td>
+                        <td class="px-6 py-4">Rp {{ number_format($product->price, 0, ',', '.') }}</td>
+                        <td class="px-6 py-4">{{ $product->stock }}</td>
+                        <td class="px-6 py-4">
+                            <a href="{{ route('products.show', $product) }}"
+                               class="mr-3 text-gray-600 hover:text-gray-900">Detail</a>
+                            <a href="{{ route('products.edit', $product) }}"
+                               class="mr-3 text-indigo-600 hover:text-indigo-900">Edit</a>
+                            <form action="{{ route('products.destroy', $product) }}"
+                                  method="POST"
+                                  class="inline"
+                                  onsubmit="return confirm('Yakin ingin menghapus produk ini?')">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="text-red-600 hover:text-red-900">
+                                    Hapus
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500">
+                            Belum ada data produk.
+                        </td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mt-6">
+        {{ $products->links() }}
+    </div>
+@endsection
+```
+
+Halamannya sudah jalan. Masalahnya ada di balik layar.
+
+## Langkah 2 — Pahami masalah N+1
+
+Controller saat ini mengambil produk dengan `Product::latest()->paginate(10)`. Query itu hanya mengambil data dari tabel `products`. Kategori belum dimuat.
+
+Lalu di Blade, setiap kali `$product->category` diakses untuk produk yang berbeda, Eloquent menjalankan **query baru** ke tabel `categories`. Cara memuat relasi "nanti saat diakses" ini disebut **lazy loading**. Untuk 10 produk per halaman:
+
+| Query | Jumlah |
+|---|---|
+| Ambil 10 produk | 1 |
+| Ambil kategori, satu per produk | 10 |
+| **Total untuk data produk** | **11** |
+
+Pola "1 query utama + N query relasi" inilah masalah **N+1**. Dengan 10 baris belum terasa, tetapi jumlah query tumbuh mengikuti jumlah baris, dan satu halaman dengan beberapa relasi bisa menjalankan ratusan query. (Pagination juga menjalankan satu query hitung total, tetapi itu tidak bertambah seiring jumlah baris.)
+
+## Langkah 3 — Perbaiki dengan eager loading
+
+**Eager loading** berarti memuat relasi **di awal**, sekaligus untuk semua produk. Caranya dengan `with()` saat membangun query:
+
+```php
+public function index(): View
+{
+    $products = Product::with('category')->latest()->paginate(10);
+
+    return view('products.index', compact('products'));
+}
+```
+
+Sekarang Eloquent menjalankan satu query untuk produk, lalu **satu** query untuk semua kategori produk-produk itu, dan memasangkannya otomatis. 11 query menjadi 2, berapa pun jumlah produk di halaman itu. View tidak perlu diubah sama sekali.
+
+### Final Complete Controller
+
+Hanya `index()` yang berubah dari pelajaran sebelumnya.
+
+Here's your complete `app/Http/Controllers/ProductController.php`:
+
+```php title="app/Http/Controllers/ProductController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Category;
+use App\Models\Product;
+use App\Models\Tag;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
+
+class ProductController extends Controller
+{
+    public function index(): View
+    {
+        $products = Product::with('category')->latest()->paginate(10);
+
+        return view('products.index', compact('products'));
+    }
+
+    public function create(): View
+    {
+        $categories = Category::orderBy('name')->get();
+        $tags = Tag::orderBy('name')->get();
+
+        return view('products.create', compact('categories', 'tags'));
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        $product = Product::create($request->safe()->except('tags'));
+
+        $product->tags()->sync($request->input('tags', []));
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil ditambahkan.');
+    }
+
+    public function show(Product $product): View
+    {
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product): View
+    {
+        $categories = Category::orderBy('name')->get();
+        $tags = Tag::orderBy('name')->get();
+
+        return view('products.edit', compact('product', 'categories', 'tags'));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        $product->update($request->safe()->except('tags'));
+
+        $product->tags()->sync($request->input('tags', []));
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil diperbarui.');
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        $product->delete();
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil dihapus.');
+    }
+}
+```
+
+> **Tips:** butuh lebih dari satu relasi? `with()` menerima array, misalnya `Product::with(['category', 'tags'])`. Kalau nanti kamu menampilkan tag di daftar produk, tambahkan `tags` di situ.
+
+## Langkah 4 — Cegah lazy loading saat development
+
+Lupa menulis `with()` itu gampang, dan halamannya tetap jalan sehingga masalahnya tidak kelihatan. Laravel bisa membuat kesalahan ini **gagal dengan keras** selama development: panggil `Model::preventLazyLoading()` di method `boot()` milik `AppServiceProvider`.
+
+Here's your complete `app/Providers/AppServiceProvider.php`:
+
+```php title="app/Providers/AppServiceProvider.php"
+<?php
+
+namespace App\Providers;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\ServiceProvider;
+
+class AppServiceProvider extends ServiceProvider
+{
+    /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+        //
+    }
+
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
+    {
+        Model::preventLazyLoading(! $this->app->isProduction());
+    }
+}
+```
+
+Argumen `! $this->app->isProduction()` artinya: cegah lazy loading di semua environment **kecuali** production. Saat development, relasi yang di-lazy-load akan melempar `Illuminate\Database\LazyLoadingViolationException`, jadi kamu langsung tahu ada `with()` yang terlupa. Di production pengaman ini mati, supaya pengguna tidak melihat error karena hal yang sebenarnya hanya masalah performa.
+
+---
+
+## Uji coba
+
+1. Buka daftar produk → kolom Kategori tampil, produk tanpa kategori menampilkan **-**.
+2. Hapus sementara `with('category')` dari `index()`, lalu muat ulang daftar produk (pastikan ada minimal dua produk) → muncul `LazyLoadingViolationException`. Inilah N+1 yang tadinya tersembunyi.
+3. Kembalikan `with('category')` → halaman normal lagi.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `LazyLoadingViolationException` | Relasi diakses di view tanpa dimuat lewat `with()` | Tambahkan relasi itu ke `with()` di query controller |
+| `Call to undefined relationship [categori]` | Nama di `with()` tidak sama dengan nama method relasi | Pakai nama method persis: `with('category')` |
+| Tabel kosong setelah menambah kolom | Lupa menambah `th`/`td` secara berpasangan | Jumlah `th` dan `td` per baris harus sama, `colspan` = jumlah kolom |
+
+## Cek pemahamanmu
+
+- [ ] Berapa query yang dijalankan untuk 10 produk tanpa `with()`, dan berapa dengan `with()`?
+- [ ] Apa beda lazy loading dan eager loading?
+- [ ] Kenapa `preventLazyLoading()` hanya diaktifkan di luar production?
+- [ ] Bagaimana memuat `category` dan `tags` sekaligus?

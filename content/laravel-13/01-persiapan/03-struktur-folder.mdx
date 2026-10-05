@@ -1,0 +1,113 @@
+---
+title: "Struktur Folder Proyek Laravel"
+description: "Pahami isi folder app, routes, resources, database, config, dan file .env, serta di mana file CRUD Product akan kamu tulis nanti."
+module: "01-persiapan"
+order: 3
+level: "pemula"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["struktur-folder", "konfigurasi", "env"]
+prerequisites: ["01-persiapan/02-instalasi"]
+nextStep: "01-persiapan/04-routing-dasar"
+---
+
+Saat pertama membuka proyek `laravel13-crud` di editor, kamu akan melihat banyak folder. Tidak perlu menghafal semuanya. Di pelajaran ini kamu mengenal folder yang paling sering disentuh, dan tahu di mana file-file CRUD Product akan ditulis di Modul 02.
+
+## Gambaran besar
+
+```text
+laravel13-crud/
+├── app/            # kode utama aplikasi (namespace App)
+│   ├── Http/       # controller, request, middleware
+│   ├── Models/     # model Eloquent
+│   └── Providers/  # service provider
+├── bootstrap/      # app.php yang menyalakan framework + cache framework
+├── config/         # semua file konfigurasi
+├── database/       # migration, factory, seeder, file SQLite
+├── public/         # index.php (pintu masuk) + aset publik
+├── resources/      # view Blade, CSS & JS mentah
+├── routes/         # web.php, console.php
+├── storage/        # log, cache, view yang sudah di-compile
+├── tests/          # test otomatis (Pest / PHPUnit)
+├── vendor/         # paket dari Composer
+└── .env            # konfigurasi per lingkungan (lokal, produksi)
+```
+
+## Folder yang paling sering kamu buka
+
+### `app/`
+
+Tempat sebagian besar kode aplikasimu. Semua class di sini memakai namespace `App` dan dimuat otomatis oleh Composer dengan standar PSR-4. Awalnya hanya ada folder `Http`, `Models`, dan `Providers`; folder lain dibuat otomatis saat kamu menjalankan perintah Artisan yang membutuhkannya.
+
+- `app/Http` menangani interaksi lewat HTTP: controller (`app/Http/Controllers`) dan Form Request (`app/Http/Requests`).
+- `app/Models` berisi model Eloquent. Setiap model mewakili satu tabel dan dipakai untuk membaca atau menyimpan data.
+
+> **Penting:** karena memakai PSR-4, nama file harus sama persis dengan nama class, termasuk huruf besar-kecil: `ProductController.php` berisi `class ProductController`. Di Linux, `productController.php` tidak akan ditemukan.
+
+### `routes/`
+
+- `web.php` berisi route untuk halaman web. Route di sini masuk ke middleware group `web` yang menyediakan session, proteksi CSRF, dan enkripsi cookie. Hampir semua route di jalur belajar ini ditulis di sini.
+- `console.php` untuk perintah konsol berbasis closure dan penjadwalan tugas.
+
+### `resources/`
+
+Berisi view (`resources/views`) serta aset mentah seperti CSS dan JavaScript yang belum di-compile. View Blade berakhiran `.blade.php`.
+
+### `database/`
+
+Berisi migration, model factory, dan seeder. File SQLite default (`database/database.sqlite`) juga disimpan di sini.
+
+### `config/`
+
+Semua file konfigurasi aplikasi. Nilai-nilainya banyak yang diambil dari file `.env`.
+
+### `public/`
+
+Berisi `index.php`, pintu masuk semua request ke aplikasi, serta aset publik seperti gambar, CSS, dan JavaScript hasil build.
+
+### Folder lain
+
+- `bootstrap/` berisi `app.php` yang menyalakan framework, plus folder `cache` untuk file optimasi yang dibuat framework.
+- `storage/` menyimpan log, template Blade yang sudah di-compile, session berbasis file, dan cache. Isinya dibagi ke `app`, `framework`, dan `logs`.
+- `tests/` berisi test otomatis. Nama class test diakhiri `Test` dan bisa dijalankan dengan `php artisan test`.
+- `vendor/` berisi paket yang dipasang Composer. Jangan mengedit isinya.
+
+## File `.env`
+
+Banyak nilai konfigurasi Laravel didefinisikan di file `.env` di root proyek, sehingga nilainya bisa berbeda antara komputermu dan server produksi. Contoh isinya:
+
+```ini title=".env"
+APP_NAME=Laravel
+APP_ENV=local
+APP_DEBUG=true
+DB_CONNECTION=sqlite
+```
+
+File konfigurasi membaca nilai itu dengan helper `env()`, lengkap dengan nilai default:
+
+```php title="config/app.php (potongan)"
+'debug' => (bool) env('APP_DEBUG', false),
+```
+
+> **Penting:** jangan pernah meng-commit `.env` ke Git. Setiap developer dan server bisa butuh nilai berbeda, dan file ini bisa berisi kredensial rahasia. Di produksi, `APP_DEBUG` harus selalu `false` agar konfigurasi sensitif tidak tampil ke pengguna.
+
+## Peta file CRUD Product (Modul 02)
+
+Supaya terbayang, inilah file yang akan kamu buat di Modul 02 dan foldernya:
+
+| File | Folder |
+|---|---|
+| `Product.php` (model) | `app/Models` |
+| `..._create_products_table.php` (migration) | `database/migrations` |
+| `ProductController.php` | `app/Http/Controllers` |
+| `StoreProductRequest.php`, `UpdateProductRequest.php` | `app/Http/Requests` |
+| `layouts/app.blade.php`, `products/*.blade.php` | `resources/views` |
+| `web.php` (route) | `routes` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa nama file class di `app/` harus sama persis dengan nama class-nya?
+- [ ] Fitur apa saja yang didapat route di `routes/web.php`?
+- [ ] Di folder mana view Blade disimpan?
+- [ ] Kenapa `.env` tidak boleh di-commit ke Git?

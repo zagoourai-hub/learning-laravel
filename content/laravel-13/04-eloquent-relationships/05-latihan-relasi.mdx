@@ -1,0 +1,92 @@
+---
+title: "Latihan: Filter, Hitung, dan CRUD Kategori"
+description: "Latihan mandiri Modul 04: hitung produk per kategori dengan withCount, filter produk per kategori dan per tag, lalu bangun CRUD Category sendiri."
+module: "04-eloquent-relationships"
+order: 5
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 45
+tags: ["latihan", "eloquent", "withCount", "whereHas", "whereBelongsTo"]
+prerequisites: ["04-eloquent-relationships/04-eager-loading"]
+---
+
+Saatnya kamu yang menulis kodenya. Setiap latihan di bawah memakai method Eloquent yang **belum** kita pakai di pelajaran sebelumnya, lengkap dengan petunjuk dari dokumentasi Laravel 13. Kerjakan berurutan; latihan berikutnya lebih bebas.
+
+## Latihan 1 — Hitung jumlah produk per kategori
+
+**Target:** tampilkan daftar kategori beserta jumlah produknya, misalnya "Minuman (4)".
+
+**Petunjuk:** `withCount()` menambahkan atribut `{relasi}_count` tanpa memuat semua produknya, jadi tetap hemat query:
+
+```php
+$categories = Category::withCount('products')->orderBy('name')->get();
+```
+
+```blade
+@foreach ($categories as $category)
+    <li>{{ $category->name }} ({{ $category->products_count }})</li>
+@endforeach
+```
+
+Letakkan daftar ini di atas tabel daftar produk, atau di halaman tersendiri.
+
+## Latihan 2 — Filter produk per kategori
+
+**Target:** klik nama kategori di Latihan 1 → daftar produk hanya menampilkan produk kategori itu, misalnya lewat URL `/products?category=2`.
+
+**Petunjuk:**
+
+- Ubah `index()` agar menerima `Request $request`, lalu ambil ID dengan `$request->integer('category')`. Hasilnya `0` kalau parameter tidak ada.
+- `when()` hanya menambahkan kondisi query kalau nilainya truthy, jadi tanpa parameter semua produk tetap tampil:
+
+```php
+$products = Product::with('category')
+    ->when($request->integer('category'), function ($query, $categoryId) {
+        $query->where('category_id', $categoryId);
+    })
+    ->latest()
+    ->paginate(10)
+    ->withQueryString();
+```
+
+- `withQueryString()` menjaga parameter `?category=` tetap ada di link pagination.
+- Kalau kamu sudah memegang model `Category`, ada cara yang lebih ekspresif: `Product::whereBelongsTo($category)`. Eloquent menentukan sendiri kolom foreign key-nya.
+
+## Latihan 3 — Filter produk per tag
+
+**Target:** `/products?tag=1` hanya menampilkan produk yang punya tag tersebut.
+
+**Petunjuk:** karena tag ada di tabel pivot, filternya memakai `whereHas()`. Method ini memeriksa keberadaan relasi dan boleh diberi kondisi tambahan:
+
+```php
+$query->whereHas('tags', function ($tagQuery) use ($tagId) {
+    $tagQuery->where('tags.id', $tagId);
+});
+```
+
+Gabungkan dengan Latihan 2 supaya filter kategori dan tag bisa dipakai bersamaan.
+
+## Latihan 4 — CRUD Category
+
+**Target:** halaman tambah, ubah, dan hapus kategori, sehingga kamu tidak perlu lagi memakai Tinker.
+
+**Petunjuk:** ulangi pola Modul 02 untuk model baru:
+
+```bash
+php artisan make:controller CategoryController --resource --model=Category --requests
+```
+
+- Daftarkan `Route::resource('categories', CategoryController::class);`.
+- Validasi minimal: `'name' => ['required', 'string', 'max:255']`. Jangan lupa ubah `authorize()` menjadi `true`.
+- Saat kategori dihapus, produk-produknya **tidak** ikut terhapus. `category_id`-nya menjadi `null` berkat `nullOnDelete()` di migration. Cek hasilnya di daftar produk.
+
+## Checklist siap lanjut
+
+Kamu siap lanjut ke modul berikutnya kalau bisa:
+
+- [ ] Menjelaskan beda `hasMany`, `belongsTo`, dan `belongsToMany` beserta tabel yang dibutuhkan masing-masing.
+- [ ] Membuat migration foreign key dengan `foreignId()->constrained()` dan memilih perilaku saat data induk dihapus.
+- [ ] Menyimpan relasi many to many dengan `sync()` dari input checkbox.
+- [ ] Mengenali N+1 dan memperbaikinya dengan `with()`.
+- [ ] Memakai `withCount()`, `whereHas()`, atau `whereBelongsTo()` sesuai kebutuhan.

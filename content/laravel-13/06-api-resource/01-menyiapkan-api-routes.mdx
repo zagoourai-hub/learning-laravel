@@ -1,0 +1,115 @@
+---
+title: "Menyiapkan API Routes dengan install:api"
+description: "Mengaktifkan routes/api.php dan Laravel Sanctum di proyek CRUD Product, lalu memahami beda route web dan route API."
+module: "06-api-resource"
+order: 1
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["api", "routing", "sanctum", "artisan"]
+prerequisites: ["02-crud-pemula/01-crud-full-controller"]
+nextStep: "06-api-resource/02-api-product-controller"
+---
+
+Sampai Modul 02, aplikasi `laravel13-crud` melayani **browser**: controller mengembalikan view Blade dan redirect. Di modul ini kamu membuka pintu kedua untuk **aplikasi lain** (aplikasi mobile, frontend JavaScript, atau layanan lain) lewat API yang mengembalikan **JSON**.
+
+Kita tetap memakai data yang sama: tabel `products` dengan kolom `name`, `description`, `price`, dan `stock`. Controller web dari Modul 02 tidak diubah sama sekali; API berjalan berdampingan dengannya.
+
+## Yang akan kamu buat
+
+- File `routes/api.php` dengan prefix otomatis `/api`
+- Laravel Sanctum terpasang untuk autentikasi token (dipakai di pelajaran 05)
+- Pemahaman kapan sebuah route masuk `web.php` dan kapan masuk `api.php`
+
+## Langkah 1 — Jalankan install:api
+
+Proyek Laravel 13 yang baru tidak langsung punya `routes/api.php`. Route API diaktifkan dengan satu perintah:
+
+```bash
+php artisan install:api
+```
+
+Perintah ini melakukan dua hal:
+
+1. Membuat file `routes/api.php`.
+2. Memasang **Laravel Sanctum**, paket autentikasi token resmi Laravel, beserta migration dan file konfigurasinya.
+
+Kalau ditanya apakah migration perlu dijalankan, jawab **yes**. Sanctum butuh tabel `personal_access_tokens` untuk menyimpan token.
+
+> **Penting:** jalankan perintah ini di folder proyek `laravel13-crud` yang sama dengan Modul 02, supaya API bisa memakai model `Product` dan Form Request yang sudah ada.
+
+## Langkah 2 — Kenali isi routes/api.php
+
+Buka `routes/api.php`. Isinya kurang lebih seperti ini:
+
+```php title="routes/api.php"
+<?php
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/user', function (Request $request) {
+    return $request->user();
+})->middleware('auth:sanctum');
+```
+
+Route `/user` ini contoh bawaan: mengembalikan data user yang sedang login lewat token Sanctum. Kita biarkan dulu, nanti dipakai di pelajaran 05.
+
+## Langkah 3 — Pahami beda web.php dan api.php
+
+| | `routes/web.php` | `routes/api.php` |
+|---|---|---|
+| Pengguna | Browser | Aplikasi lain (mobile, SPA, server) |
+| Respons | View Blade, redirect | JSON |
+| Status login | Session (cookie) | Token, tanpa session (*stateless*) |
+| Prefix URL | tidak ada | `/api` otomatis |
+| Proteksi CSRF | ya (`@csrf` di form) | tidak dipakai |
+
+Dokumentasi Laravel menyebut route di `api.php` bersifat **stateless**: setiap request membawa identitasnya sendiri (token), dan tidak membaca session. Karena itu form Blade dengan `@csrf` tidak relevan di sini.
+
+Prefix `/api` ditambahkan otomatis. Route yang kamu tulis sebagai `/products` di `api.php` akan diakses lewat `/api/products`. Prefix ini bisa diubah di `bootstrap/app.php` lewat opsi `apiPrefix` pada `withRouting`, tapi kita pakai default saja.
+
+## Langkah 4 — Cek dengan route:list
+
+```bash
+php artisan route:list --path=api
+```
+
+Kamu akan melihat route `GET api/user`. Route web `products.*` dari Modul 02 tetap ada dan tidak terpengaruh.
+
+## Uji coba
+
+Pastikan server masih jalan (`composer run dev`), lalu panggil route `/api/user` tanpa token:
+
+```bash
+curl -H "Accept: application/json" http://localhost:8000/api/user
+```
+
+Hasilnya:
+
+```json
+{
+    "message": "Unauthenticated."
+}
+```
+
+Itu tandanya API sudah aktif dan dijaga Sanctum. Token baru akan kita buat di pelajaran 05.
+
+> **Tips Windows:** di PowerShell, `curl` adalah alias untuk perintah lain. Pakai `curl.exe` supaya perintah di atas berjalan sama persis.
+
+Header `Accept: application/json` penting: dengan header ini Laravel tahu klien mengharapkan JSON, sehingga error pun dikembalikan sebagai JSON, bukan halaman HTML.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `/api/...` menghasilkan 404 | `routes/api.php` belum ada | Jalankan `php artisan install:api` |
+| Error tabel `personal_access_tokens` tidak ditemukan | Migration Sanctum belum dijalankan | `php artisan migrate` |
+| Respons berupa HTML, bukan JSON | Header `Accept: application/json` tidak dikirim | Tambahkan `-H "Accept: application/json"` di curl |
+
+## Cek pemahamanmu
+
+- [ ] Apa dua hal yang dilakukan `php artisan install:api`?
+- [ ] Kenapa route API disebut *stateless*?
+- [ ] Route `/products` di `api.php` diakses lewat URL apa?

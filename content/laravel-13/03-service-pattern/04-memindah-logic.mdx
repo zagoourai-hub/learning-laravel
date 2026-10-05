@@ -1,0 +1,160 @@
+---
+title: "Memindah Logic ke Service"
+description: "Aturan praktis memilah logic antara Form Request, controller, service, dan model, cara memakai DB::transaction di service, dan contoh menaruh fitur pencarian di service."
+module: "03-service-pattern"
+order: 4
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["service-pattern", "transaction", "form-request", "query"]
+nextStep: "03-service-pattern/05-testing-service"
+---
+
+Setelah pelajaran 03, controller sudah tipis. Pertanyaan berikutnya selalu muncul saat aplikasi tumbuh: **logic baru ditaruh di mana?** Pelajaran ini memberi aturan praktisnya, membahas transaksi database, lalu menunjukkan contoh fitur pencarian yang ditaruh di service.
+
+> **Penting:** file final proyek utama **tidak berubah** dari pelajaran 03. Bagian transaksi dan pencarian di bawah adalah pola dan contoh perluasan yang boleh kamu terapkan nanti, saat aplikasimu benar-benar membutuhkannya.
+
+## Langkah 1 — Aturan memilah logic
+
+| Letak | Isinya | Contoh di proyek kita |
+|---|---|---|
+| **Form Request** | Validasi input (dan otorisasi) | `StoreProductRequest`, `UpdateProductRequest` |
+| **Controller** | Mengambil input, memanggil service, memilih view/redirect, pesan flash | `to_route('products.index')->with('success', ...)` |
+| **Service** | Query, operasi simpan/ubah/hapus, aturan bisnis, transaksi | `ProductService::paginate()`, `create()`, `update()`, `delete()` |
+| **Model** | Struktur data: `$fillable`, `casts()`, relasi | `Product` |
+
+Pertanyaan cepat untuk menentukan letak sebuah baris kode: *"Apakah kode ini masih masuk akal kalau dipanggil dari Artisan command atau job antrean, tanpa request web?"* Kalau ya, tempatnya di service. Kalau kode itu menyangkut request, view, redirect, atau pesan untuk pengguna, tempatnya di controller.
+
+## Langkah 2 — Validasi tetap di Form Request
+
+Godaan yang sering muncul setelah punya service adalah memindahkan validasi ke dalamnya. Jangan. Form Request sudah menangani alur validasi web dengan rapi: kalau gagal, pengguna dikembalikan ke form beserta pesan error dan input lamanya (`old()` dan `@error` di view). Service cukup menerima data yang **sudah tervalidasi**:
+
+```php
+public function store(StoreProductRequest $request): RedirectResponse
+{
+    $this->products->create($request->validated());
+
+    return to_route('products.index')
+        ->with('success', 'Produk berhasil ditambahkan.');
+}
+```
+
+Begitu juga pesan sukses: kalimat "Produk berhasil ditambahkan." adalah teks untuk pengguna web, jadi tetap di controller.
+
+## Langkah 3 — Transaksi database di service
+
+Kadang satu aksi pengguna harus menulis ke beberapa tabel sekaligus, dan semuanya harus berhasil atau semuanya dibatalkan. Untuk itu Laravel menyediakan `DB::transaction`. Menurut dokumentasi Laravel, kalau terjadi exception di dalam closure, transaksi otomatis di-*rollback* dan exception-nya dilempar ulang; kalau closure selesai tanpa error, transaksi otomatis di-*commit*.
+
+Tempat yang tepat untuk transaksi adalah **service**, karena transaksi adalah bagian dari aturan bisnis "simpan semuanya atau tidak sama sekali". Polanya seperti ini:
+
+```php
+use Illuminate\Support\Facades\DB;
+
+public function create(array $data): Product
+{
+    $product = new Product($data);
+
+    DB::transaction(function () use ($product) {
+        $product->save();
+
+        // Operasi lain yang harus ikut berhasil atau ikut dibatalkan,
+        // misalnya mencatat riwayat stok ke tabel lain.
+    });
+
+    return $product;
+}
+```
+
+Controller tidak perlu tahu ada transaksi di dalamnya; ia tetap memanggil `$this->products->create(...)` seperti biasa.
+
+Kalau database-mu bisa mengalami *deadlock*, `DB::transaction` menerima argumen kedua berupa jumlah percobaan ulang:
+
+```php
+DB::transaction(function () use ($product) {
+    $product->save();
+}, attempts: 5);
+```
+
+> **Tips:** di proyek kita saat ini, `create()` hanya menulis ke satu tabel, jadi transaksi belum dibutuhkan. Tambahkan transaksi saat memang ada lebih dari satu operasi tulis yang harus kompak.
+
+## Langkah 4 — Contoh perluasan: pencarian produk (opsional)
+
+Misalnya kamu ingin menambahkan kotak pencarian nama produk di halaman daftar. Dengan Service Pattern, query-nya masuk ke `ProductService`, bukan ke controller.
+
+**Service**: tambahkan parameter `$search` dengan nilai default string kosong, sehingga pemanggilan lama `paginate()` tetap bekerja:
+
+```php
+use Illuminate\Database\Eloquent\Builder;
+
+public function paginate(string $search = ''): LengthAwarePaginator
+{
+    return Product::query()
+        ->when($search, function (Builder $query, string $search) {
+            $query->whereLike('name', "%{$search}%");
+        })
+        ->latest()
+        ->paginate(10)
+        ->withQueryString();
+}
+```
+
+- `when($search, ...)` menjalankan closure hanya kalau `$search` bernilai *truthy*. String kosong dianggap false, jadi tanpa kata kunci query-nya sama dengan sebelumnya.
+- `whereLike` menambahkan klausa `LIKE`, yang menurut dokumentasi Laravel tidak membedakan huruf besar dan kecil secara default.
+- `withQueryString()` membuat link pagination tetap membawa `?search=...`, supaya hasil pencarian tidak hilang saat pindah halaman.
+
+**Controller**: `index()` mengambil kata kunci dari query string lalu mengirimnya ke service:
+
+```php
+use Illuminate\Http\Request;
+
+public function index(Request $request): View
+{
+    $search = $request->string('search')->trim()->toString();
+
+    $products = $this->products->paginate($search);
+
+    return view('products.index', compact('products', 'search'));
+}
+```
+
+> **Jebakan umum:** `$request->string('search')` mengembalikan object `Stringable`, dan object selalu dianggap *truthy* oleh PHP, termasuk saat isinya kosong. Karena itu panggil `->toString()` sebelum dikirim ke `when()`, supaya string kosong benar-benar dianggap false.
+
+**View**: tambahkan form `GET` di atas tabel `products/index.blade.php`:
+
+```blade
+<form action="{{ route('products.index') }}" method="GET" class="mb-6 flex gap-3">
+    <input type="search" name="search" value="{{ $search }}" placeholder="Cari nama produk..."
+           class="w-full rounded-md border border-gray-300 px-3 py-2">
+    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+        Cari
+    </button>
+</form>
+```
+
+Perhatikan pembagian tugasnya: controller hanya mengambil input dan memilih view, service yang tahu cara mencari.
+
+## Langkah 5 — Cek apakah controller sudah tipis
+
+Gunakan daftar ini setiap kali menambah fitur:
+
+- [ ] Tidak ada `Product::...` untuk query atau simpan di controller, kecuali route model binding (`Product $product`).
+- [ ] Semua aturan validasi ada di Form Request.
+- [ ] Setiap method controller kira-kira: ambil input, panggil service, kembalikan response.
+- [ ] Service tidak memakai `request()`, `view()`, `redirect()`, atau `session()`.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Closure di `when()` tetap dijalankan walau kotak pencarian kosong | `Stringable` dikirim tanpa `->toString()`, dan object selalu *truthy* | Pakai `$request->string('search')->trim()->toString()` |
+| Pindah ke halaman 2 membuat pencarian hilang | Lupa `withQueryString()` | Tambahkan `->withQueryString()` setelah `paginate(10)` |
+| `Undefined variable $search` di view | `search` tidak ikut dikirim ke view | Gunakan `compact('products', 'search')` |
+| `Class "App\Services\DB" not found` | Lupa import facade | Tambahkan `use Illuminate\Support\Facades\DB;` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa validasi tidak dipindah ke service?
+- [ ] Apa yang terjadi pada transaksi kalau ada exception di dalam closure `DB::transaction`?
+- [ ] Kenapa `when()` membutuhkan string biasa, bukan `Stringable`?
+- [ ] Logic baru "kirim email setelah produk dibuat" sebaiknya ditaruh di mana, dan kenapa?

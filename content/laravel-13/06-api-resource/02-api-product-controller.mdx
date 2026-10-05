@@ -1,0 +1,215 @@
+---
+title: "API Controller untuk Product dengan --api"
+description: "Membuat Api\\ProductController tanpa method create/edit, mendaftarkan Route::apiResource, dan memakai ulang StoreProductRequest serta UpdateProductRequest."
+module: "06-api-resource"
+order: 2
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["api", "controller", "apiResource", "form-request"]
+prerequisites: ["06-api-resource/01-menyiapkan-api-routes"]
+nextStep: "06-api-resource/03-product-resource"
+---
+
+Controller web dari Modul 02 punya 7 method, termasuk `create()` dan `edit()` yang menampilkan form. Aplikasi lain yang memakai API tidak butuh form HTML; mereka langsung mengirim data. Karena itu Laravel menyediakan **API resource controller**: controller resource tanpa `create` dan `edit`.
+
+Di pelajaran ini kamu membuat controller terpisah di folder `Api`, supaya controller web tetap utuh.
+
+## Langkah 1 — Buat controller dengan --api
+
+```bash
+php artisan make:controller Api/ProductController --api --model=Product
+```
+
+- `Api/ProductController` membuat file `app/Http/Controllers/Api/ProductController.php` dengan namespace `App\Http\Controllers\Api`, jadi tidak bentrok dengan `ProductController` web.
+- `--api` membuat 5 method saja: `index`, `store`, `show`, `update`, `destroy` (tanpa `create` dan `edit`).
+- `--model=Product` membuat method yang butuh satu produk langsung menerima `Product $product` lewat route model binding, sama seperti di Modul 02.
+
+## Langkah 2 — Daftarkan route dengan apiResource
+
+Buka `routes/api.php` dan tambahkan route produk:
+
+```php
+use App\Http\Controllers\Api\ProductController;
+
+Route::name('api.')->group(function () {
+    Route::apiResource('products', ProductController::class);
+});
+```
+
+`Route::apiResource` seperti `Route::resource`, tetapi otomatis **tanpa** route `create` dan `edit`.
+
+> **Jebakan umum:** jangan lupa `Route::name('api.')`. Tanpa prefix nama ini, route API juga bernama `products.index`, `products.store`, dan seterusnya, sama persis dengan route web dari Modul 02. Nama route harus unik; kalau bentrok, `to_route('products.index')` di controller web bisa mengarah ke URL yang salah, dan `php artisan route:cache` akan gagal. Dengan prefix, nama route API menjadi `api.products.index` dan kawan-kawan.
+
+Cek hasilnya:
+
+```bash
+php artisan route:list --path=api
+```
+
+| Method | URI | Nama route | Method controller |
+|---|---|---|---|
+| GET | `api/products` | `api.products.index` | `index` |
+| POST | `api/products` | `api.products.store` | `store` |
+| GET | `api/products/{product}` | `api.products.show` | `show` |
+| PUT/PATCH | `api/products/{product}` | `api.products.update` | `update` |
+| DELETE | `api/products/{product}` | `api.products.destroy` | `destroy` |
+
+## Langkah 3 — Isi method controller
+
+Logikanya sama dengan controller web: query, simpan, ubah, hapus. Bedanya, kita **mengembalikan data**, bukan view atau redirect. Laravel otomatis mengubah model Eloquent dan hasil pagination menjadi JSON saat dikembalikan dari controller.
+
+Kita juga memakai ulang `StoreProductRequest` dan `UpdateProductRequest` dari Modul 02. Aturan validasi dan pesan errornya (`Nama produk wajib diisi.`, `Harga tidak boleh negatif.`, dan seterusnya) otomatis berlaku untuk API juga.
+
+**`index()` — daftar produk, 10 per halaman (sama dengan versi web)**
+
+```php
+public function index(): LengthAwarePaginator
+{
+    return Product::latest()->paginate(10);
+}
+```
+
+**`store()` — simpan produk baru**
+
+```php
+public function store(StoreProductRequest $request): Product
+{
+    return Product::create($request->validated());
+}
+```
+
+**`show()`, `update()`, `destroy()`**
+
+```php
+public function show(Product $product): Product
+{
+    return $product;
+}
+
+public function update(UpdateProductRequest $request, Product $product): Product
+{
+    $product->update($request->validated());
+
+    return $product;
+}
+
+public function destroy(Product $product): Response
+{
+    $product->delete();
+
+    return response()->noContent();
+}
+```
+
+`response()->noContent()` mengembalikan status **204 No Content**: berhasil, tapi tidak ada isi yang perlu dikirim.
+
+## Langkah 4 — Final Complete File
+
+Here's your complete `app/Http/Controllers/Api/ProductController.php`:
+
+```php title="app/Http/Controllers/Api/ProductController.php"
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Product;
+use Illuminate\Http\Response;
+use Illuminate\Pagination\LengthAwarePaginator;
+
+class ProductController extends Controller
+{
+    public function index(): LengthAwarePaginator
+    {
+        return Product::latest()->paginate(10);
+    }
+
+    public function store(StoreProductRequest $request): Product
+    {
+        return Product::create($request->validated());
+    }
+
+    public function show(Product $product): Product
+    {
+        return $product;
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): Product
+    {
+        $product->update($request->validated());
+
+        return $product;
+    }
+
+    public function destroy(Product $product): Response
+    {
+        $product->delete();
+
+        return response()->noContent();
+    }
+}
+```
+
+Here's your complete `routes/api.php`:
+
+```php title="routes/api.php"
+<?php
+
+use App\Http\Controllers\Api\ProductController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/user', function (Request $request) {
+    return $request->user();
+})->middleware('auth:sanctum');
+
+Route::name('api.')->group(function () {
+    Route::apiResource('products', ProductController::class);
+});
+```
+
+> **Catatan:** route produk di sini sementara masih **terbuka untuk siapa saja**. Kita menguncinya dengan token Sanctum di pelajaran 05.
+
+## Uji coba dengan curl
+
+Ambil daftar produk:
+
+```bash
+curl -H "Accept: application/json" http://localhost:8000/api/products
+```
+
+Tambah produk:
+
+```bash
+curl -X POST http://localhost:8000/api/products \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Kopi Susu","description":"Kopi susu gula aren","price":18000,"stock":25}'
+```
+
+Hapus produk dengan id 1:
+
+```bash
+curl -X DELETE -H "Accept: application/json" http://localhost:8000/api/products/1
+```
+
+> **Tips Windows:** di PowerShell pakai `curl.exe`, dan untuk perintah multi-baris ganti `\` di akhir baris dengan backtick, atau tulis dalam satu baris.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Redirect ke `/products` web setelah menambah produk | Nama route API bentrok dengan route web | Bungkus dengan `Route::name('api.')->group(...)` |
+| `Target class [App\Http\Controllers\ProductController] does not exist` untuk route API | `use` di `routes/api.php` masih menunjuk controller web | Pastikan `use App\Http\Controllers\Api\ProductController;` |
+| Submit data salah malah dapat HTML | Header `Accept: application/json` tidak dikirim | Tambahkan header tersebut |
+
+## Cek pemahamanmu
+
+- [ ] Apa beda `--api` dengan `--resource`?
+- [ ] Kenapa controller API diletakkan di folder `Api`?
+- [ ] Kenapa route API perlu `Route::name('api.')`?
+- [ ] Status code apa yang dikembalikan `response()->noContent()`?

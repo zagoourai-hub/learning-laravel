@@ -1,0 +1,81 @@
+---
+title: "Pengenalan Relasi Eloquent"
+description: "Kenali tiga relasi yang paling sering dipakai — hasMany, belongsTo, dan belongsToMany — beserta konvensi nama foreign key dan tabel pivot di Laravel 13."
+module: "04-eloquent-relationships"
+order: 1
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 10
+tags: ["eloquent", "relationships", "konsep"]
+prerequisites: ["02-crud-pemula/01-crud-full-controller"]
+nextStep: "04-eloquent-relationships/02-category-one-to-many"
+---
+
+Di Modul 02 kamu membuat CRUD `Product` yang berdiri sendiri. Aplikasi nyata jarang seperti itu: produk punya **kategori**, produk bisa punya banyak **tag**, dan nanti produk dimiliki seorang **user**. Hubungan antar-tabel seperti ini disebut **relasi**, dan Eloquent membuatnya terasa seperti mengakses property biasa.
+
+Modul ini melanjutkan proyek `laravel13-crud` dari **kode akhir Modul 02**. Pelajaran ini murni konsep, belum ada kode yang diubah.
+
+## Kenapa butuh relasi?
+
+Tanpa relasi, kamu harus menulis query manual setiap kali butuh data terkait, misalnya mencari semua produk dengan `category_id` tertentu. Dengan relasi, cukup definisikan sekali di model, lalu pakai di mana saja:
+
+```php
+$category->products;   // semua produk dalam kategori ini
+$product->category;    // kategori milik produk ini
+```
+
+Relasi didefinisikan sebagai **method** di model, tetapi dipanggil seperti **property** (tanpa tanda kurung). Eloquent menjalankan query-nya saat property itu pertama kali diakses.
+
+## Tiga relasi yang akan kita pakai
+
+| Relasi | Contoh di proyek | Method di model |
+|---|---|---|
+| One to many | Satu `Category` punya banyak `Product` | `hasMany()` di `Category` |
+| Kebalikan one to many | Satu `Product` milik satu `Category` | `belongsTo()` di `Product` |
+| Many to many | Satu `Product` punya banyak `Tag`, satu `Tag` dipakai banyak `Product` | `belongsToMany()` di keduanya |
+
+Bentuk method-nya selalu sama: method publik yang mengembalikan objek relasi. Contoh one to many dari sisi `Category`:
+
+```php
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+public function products(): HasMany
+{
+    return $this->hasMany(Product::class);
+}
+```
+
+Dan kebalikannya dari sisi `Product`:
+
+```php
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+public function category(): BelongsTo
+{
+    return $this->belongsTo(Category::class);
+}
+```
+
+## Konvensi nama yang dipakai Eloquent
+
+Eloquent menebak nama kolom dan tabel dari nama model, jadi kamu jarang perlu menuliskannya:
+
+- **Foreign key** = nama model induk dalam `snake_case` + `_id`. Induknya `Category`, maka kolom di tabel `products` adalah `category_id`.
+- **Tabel pivot** (tabel perantara many to many) = gabungan nama kedua model dalam bentuk tunggal, diurutkan **alfabetis**. `Product` dan `Tag` menjadi `product_tag`, berisi kolom `product_id` dan `tag_id`.
+
+> **Tips:** kalau namamu tidak mengikuti konvensi, semua method relasi menerima argumen tambahan untuk nama kolom atau tabel, misalnya `$this->belongsTo(Category::class, 'kategori_id')`. Di modul ini kita selalu mengikuti konvensi supaya kodenya ringkas.
+
+## Rencana modul ini
+
+1. **Category (one to many):** tabel `categories`, kolom `category_id` di `products`, pilihan kategori di form.
+2. **Tag (many to many):** tabel `tags` dan pivot `product_tag`, checkbox tag di form.
+3. **Eager loading:** menampilkan kategori di daftar produk tanpa terjebak masalah N+1 query.
+4. **Latihan:** filter produk per kategori dan menghitung jumlah produk.
+
+## Cek pemahamanmu
+
+- [ ] Apa beda `hasMany()` dan `belongsTo()`, dan di model mana masing-masing ditulis?
+- [ ] Kenapa `$product->category` ditulis tanpa tanda kurung?
+- [ ] Apa nama kolom foreign key kalau model induknya `Category`?
+- [ ] Apa nama tabel pivot untuk relasi `Product` dan `Tag`?

@@ -1,0 +1,166 @@
+---
+title: "Validasi, Respons Error JSON, dan Status Code"
+description: "Memahami respons 422 dari StoreProductRequest di API, 404 saat produk tidak ada, dan mengembalikan 201 Created saat produk baru dibuat."
+module: "06-api-resource"
+order: 4
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["api", "validation", "http-status", "error-handling"]
+prerequisites: ["06-api-resource/03-product-resource"]
+nextStep: "06-api-resource/05-autentikasi-sanctum"
+---
+
+Klien API tidak melihat halaman dengan pesan merah di bawah input. Yang mereka baca hanyalah **status code** dan **JSON**. Karena itu setiap jawaban API harus jujur: 201 kalau data dibuat, 422 kalau data tidak valid, 404 kalau data tidak ada.
+
+Kabar baiknya, sebagian besar sudah ditangani Laravel. Di pelajaran ini kamu melihat apa yang terjadi otomatis, lalu merapikan status code saat membuat produk.
+
+## Langkah 1 — Validasi otomatis dari Form Request
+
+`Api\ProductController` memakai `StoreProductRequest` yang sama dengan versi web. Di web, kalau validasi gagal, user di-redirect kembali ke form. Di API, dokumentasi Laravel menjelaskan bahwa kalau request **mengharapkan JSON**, Laravel tidak me-redirect, melainkan mengembalikan **422 Unprocessable Entity** berisi semua pesan error.
+
+Coba kirim produk kosong:
+
+```bash
+curl -X POST http://localhost:8000/api/products \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Responsnya (status 422):
+
+```json
+{
+    "message": "Nama produk wajib diisi. (and 2 more errors)",
+    "errors": {
+        "name": ["Nama produk wajib diisi."],
+        "price": ["Harga wajib diisi."],
+        "stock": ["Stok wajib diisi."]
+    }
+}
+```
+
+Pesan bahasa Indonesia itu berasal dari method `messages()` di `StoreProductRequest` Modul 02. Kamu tidak menulis satu baris kode validasi pun di controller API.
+
+> **Jebakan umum:** tanpa header `Accept: application/json`, Laravel menganggap request datang dari browser dan membalas dengan **redirect**, bukan JSON. Klien API sebaiknya selalu mengirim header ini.
+
+## Langkah 2 — 404 saat produk tidak ditemukan
+
+Route model binding (`Product $product`) mencari produk berdasarkan id di URL. Kalau tidak ada, Laravel melempar exception yang otomatis menjadi respons **404**. Karena klien meminta JSON, error-nya juga dikirim sebagai JSON:
+
+```bash
+curl -i -H "Accept: application/json" http://localhost:8000/api/products/9999
+```
+
+Opsi `-i` menampilkan baris status (`HTTP/1.1 404 Not Found`) di atas isi respons.
+
+## Langkah 3 — 201 Created saat produk dibuat
+
+Konvensi REST: membuat data baru dijawab dengan **201 Created**. Kita jadikan eksplisit di `store()` dengan mengambil objek respons dari resource lewat method `response()`, lalu mengatur status code-nya:
+
+```php
+public function store(StoreProductRequest $request): JsonResponse
+{
+    $product = Product::create($request->validated());
+
+    return (new ProductResource($product))
+        ->response()
+        ->setStatusCode(201);
+}
+```
+
+Method `response()` pada resource mengembalikan `JsonResponse`, jadi kamu bisa mengatur status, header, dan lainnya sebelum dikirim.
+
+## Ringkasan status code di API Product
+
+| Aksi | Method & URL | Status sukses | Status gagal |
+|---|---|---|---|
+| Daftar | `GET /api/products` | 200 OK | — |
+| Detail | `GET /api/products/{product}` | 200 OK | 404 Not Found |
+| Tambah | `POST /api/products` | 201 Created | 422 Unprocessable Entity |
+| Ubah | `PUT /api/products/{product}` | 200 OK | 404 / 422 |
+| Hapus | `DELETE /api/products/{product}` | 204 No Content | 404 Not Found |
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/Api/ProductController.php`:
+
+```php title="app/Http/Controllers/Api/ProductController.php"
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Http\Resources\ProductResource;
+use App\Models\Product;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Response;
+
+class ProductController extends Controller
+{
+    public function index(): AnonymousResourceCollection
+    {
+        return ProductResource::collection(Product::latest()->paginate(10));
+    }
+
+    public function store(StoreProductRequest $request): JsonResponse
+    {
+        $product = Product::create($request->validated());
+
+        return (new ProductResource($product))
+            ->response()
+            ->setStatusCode(201);
+    }
+
+    public function show(Product $product): ProductResource
+    {
+        return new ProductResource($product);
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): ProductResource
+    {
+        $product->update($request->validated());
+
+        return new ProductResource($product);
+    }
+
+    public function destroy(Product $product): Response
+    {
+        $product->delete();
+
+        return response()->noContent();
+    }
+}
+```
+
+## Uji coba
+
+Tambah produk valid dan perhatikan status-nya:
+
+```bash
+curl -i -X POST http://localhost:8000/api/products \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Teh Tarik","price":15000,"stock":10}'
+```
+
+Baris pertama harus `HTTP/1.1 201 Created`. Lalu coba harga negatif (`"price":-5`): kamu akan mendapat 422 dengan pesan `Harga tidak boleh negatif.`.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Validasi gagal tapi dapat status 302 | Header `Accept: application/json` tidak dikirim | Tambahkan header tersebut |
+| Selalu 403 saat `POST`/`PUT` | `authorize()` di Form Request masih `false` | Ubah menjadi `return true;` (lihat Modul 02) |
+| `Call to undefined method ...::setStatusCode()` | Memanggil `setStatusCode` langsung pada resource, tanpa `response()` | Gunakan `(new ProductResource($product))->response()->setStatusCode(201)` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa API butuh status code yang tepat, bukan hanya pesan?
+- [ ] Dari mana pesan `Nama produk wajib diisi.` di respons 422 berasal?
+- [ ] Apa yang terjadi kalau klien lupa mengirim `Accept: application/json`?

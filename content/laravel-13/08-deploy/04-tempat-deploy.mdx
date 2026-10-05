@@ -1,0 +1,115 @@
+---
+title: "Memilih Tempat Deploy: Laravel Cloud, Forge, atau Server Sendiri"
+description: "Kenali pilihan deploy yang disebut dokumentasi resmi Laravel 13, lalu siapkan server sendiri dengan konfigurasi Nginx dan izin folder storage serta bootstrap/cache."
+module: "08-deploy"
+order: 4
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["deploy", "nginx", "server", "laravel-cloud", "forge"]
+nextStep: "08-deploy/05-checklist-troubleshooting"
+---
+
+Aplikasi sudah siap untuk produksi. Sekarang pertanyaannya: dipasang di mana? Dokumentasi resmi Laravel 13 menyebut dua layanan resmi, Laravel Cloud dan Laravel Forge, serta cara mengonfigurasi server sendiri. Pelajaran ini membandingkan ketiganya, lalu membahas konfigurasi server sendiri secara rinci.
+
+## Langkah 1 — Kenali pilihannya
+
+| Pilihan | Menurut dokumentasi | Cocok untuk |
+|---|---|---|
+| **Laravel Cloud** | Platform deploy yang dikelola penuh dan auto-scaling, khusus untuk aplikasi Laravel. Menyediakan compute, database, cache, dan object storage terkelola, jadi kamu tidak perlu mengurus infrastruktur. | Kamu yang ingin fokus ke kode, tanpa mengurus server. |
+| **Laravel Forge** | Platform manajemen server VPS untuk yang ingin mengelola servernya sendiri. Terintegrasi dengan penyedia infrastruktur seperti AWS, DigitalOcean, dan Linode, dan mengotomatiskan instalasi layanan seperti Nginx, MySQL, Redis, dan Memcached. | Kamu yang ingin punya server sendiri tapi tidak mau setup manual. |
+| **Server sendiri** | Kamu menyiapkan web server (misalnya Nginx atau FrankenPHP) dan PHP sendiri. | Kamu yang ingin memahami semuanya dari bawah atau sudah punya server. |
+
+> **Tips:** detail harga dan paket tiap layanan berubah dari waktu ke waktu. Cek langsung di situs resminya sebelum memilih.
+
+Langkah-langkah di bawah ini untuk **server sendiri**. Kalau memakai Laravel Cloud atau Forge, sebagian besar langkah ini (Nginx, PHP, izin folder) diurus oleh platformnya, tapi langkah dari pelajaran 01–03 (`.env`, `npm run build`, `php artisan optimize`, `php artisan migrate --force`) tetap berlaku.
+
+## Langkah 2 — Arahkan web server ke folder `public`
+
+Aturan terpenting: **root dokumen web server harus menunjuk ke folder `public`** proyek `laravel13-crud`, bukan ke folder proyeknya. Dengan begitu file seperti `.env` tidak bisa diakses dari browser. Semua request diteruskan ke `public/index.php`.
+
+## Langkah 3 — Konfigurasi Nginx
+
+Dokumentasi Laravel menyediakan server block Nginx berikut sebagai titik awal. Kamu cukup menyesuaikan `server_name`, `root`, dan socket PHP-FPM.
+
+### Final Complete Nginx Config
+
+Here's your complete `nginx server block`:
+
+```text title="nginx server block"
+server {
+    listen 80;
+    listen [::]:80;
+    server_name example.com;
+    root /srv/example.com/public;
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+
+    index index.php;
+
+    charset utf-8;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ ^/index\.php(/|$) {
+        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_buffer_size 32k;
+        fastcgi_buffers 8 32k;
+        fastcgi_busy_buffers_size 64k;
+        fastcgi_hide_header X-Powered-By;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
+```
+
+Bagian yang perlu kamu sesuaikan:
+
+- `server_name example.com;` → domainmu.
+- `root /srv/example.com/public;` → path ke folder `public` milik `laravel13-crud` di server.
+- `fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;` → socket PHP-FPM sesuai versi PHP yang terpasang di server (misalnya kalau memakai PHP versi lain, nama socket-nya ikut berbeda).
+
+Blok `location /` dengan `try_files` yang meneruskan request ke `index.php` inilah yang membuat URL seperti `/products/5/edit` bisa dikenali oleh `Route::resource('products', ProductController::class)`. Blok terakhir menolak akses ke file tersembunyi seperti `.env`.
+
+## Langkah 4 — Alternatif: FrankenPHP
+
+Dokumentasi juga menyebut FrankenPHP, application server PHP modern yang ditulis dengan Go. Aplikasi Laravel bisa dijalankan dengan:
+
+```bash
+frankenphp php-server -r public/
+```
+
+Perhatikan bahwa yang dilayani tetap folder `public/`.
+
+## Langkah 5 — Izin folder `storage` dan `bootstrap/cache`
+
+Laravel perlu **menulis** ke folder `storage` (log, view Blade yang sudah di-compile, session, cache) dan `bootstrap/cache` (file cache route dan service). Pastikan pemilik proses web server punya izin tulis ke kedua folder itu. Tanpa izin ini, aplikasi akan error saat pertama kali diakses atau saat `php artisan optimize` dijalankan.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Browser menampilkan daftar file atau isi kode PHP | Root web server menunjuk ke folder proyek, bukan `public` | Ubah `root` ke `.../public` |
+| `/products` berfungsi tapi `/products/create` 404 dari Nginx | `try_files` belum meneruskan ke `index.php` | Pakai blok `location /` dari konfigurasi di atas |
+| 502 Bad Gateway | `fastcgi_pass` menunjuk socket PHP-FPM yang salah | Sesuaikan path socket dengan versi PHP-FPM di server |
+| Error 500 dengan pesan permission di log | Web server tidak bisa menulis ke `storage` atau `bootstrap/cache` | Beri izin tulis ke pemilik proses web server |
+
+## Cek pemahamanmu
+
+- [ ] Apa beda Laravel Cloud dan Laravel Forge menurut dokumentasi?
+- [ ] Kenapa root web server harus ke folder `public`?
+- [ ] Bagian mana dari konfigurasi Nginx yang wajib kamu sesuaikan?
+- [ ] Dua folder mana yang harus bisa ditulis oleh web server?

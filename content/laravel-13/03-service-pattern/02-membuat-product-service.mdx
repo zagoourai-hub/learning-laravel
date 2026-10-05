@@ -1,0 +1,161 @@
+---
+title: "Membuat ProductService"
+description: "Buat class App\\Services\\ProductService berisi paginate, create, update, dan delete yang perilakunya sama persis dengan logic ProductController di Modul 02."
+module: "03-service-pattern"
+order: 2
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["service-pattern", "service", "eloquent"]
+nextStep: "03-service-pattern/03-controller-tipis-di"
+---
+
+Di pelajaran ini kita membuat `ProductService`: satu class yang menampung semua operasi data Product. Aturannya sederhana: **perilaku tidak boleh berubah**. Query, jumlah data per halaman, dan cara menyimpan harus sama persis dengan yang ada di `ProductController` akhir Modul 02. Kita hanya memindahkan *letaknya*.
+
+Controller belum kita sentuh di sini. Kita siapkan service-nya dulu, lalu di pelajaran berikutnya controller mulai memakainya.
+
+## Langkah 1 — Petakan logic yang akan dipindah
+
+Lihat lagi `ProductController` dari Modul 02. Ada empat baris yang menyentuh database:
+
+| Method controller | Baris di Modul 02 | Method service baru |
+|---|---|---|
+| `index()` | `Product::latest()->paginate(10)` | `paginate()` |
+| `store()` | `Product::create($request->validated())` | `create(array $data)` |
+| `update()` | `$product->update($request->validated())` | `update(Product $product, array $data)` |
+| `destroy()` | `$product->delete()` | `delete(Product $product)` |
+
+Method `create()`, `show()`, dan `edit()` di controller hanya menampilkan view, jadi tidak ada yang perlu dipindah.
+
+Perhatikan bahwa service menerima **array data**, bukan object `Request`. Validasi tetap di `StoreProductRequest` dan `UpdateProductRequest`; controller yang memanggil `$request->validated()` lalu meneruskan hasilnya ke service. Dengan begitu service tidak bergantung pada HTTP dan bisa dipanggil dari mana saja.
+
+## Langkah 2 — Buat file service
+
+Laravel tidak membuat folder `app/Services` secara default. Buat folder itu, lalu buat file `ProductService.php` di dalamnya:
+
+```text
+app/
+└── Services/
+    └── ProductService.php
+```
+
+Namespace `App\Services` otomatis cocok dengan folder `app/Services` karena autoload PSR-4 bawaan Laravel memetakan namespace `App\` ke folder `app/`. Jadi nama file dan nama class harus sama persis, termasuk huruf besarnya: `ProductService.php` berisi `class ProductService`.
+
+## Langkah 3 — Isi method satu per satu
+
+**`paginate()`**, pengganti query di `index()`:
+
+```php
+public function paginate(): LengthAwarePaginator
+{
+    return Product::latest()->paginate(10);
+}
+```
+
+Query-nya identik dengan Modul 02: data terbaru dulu, 10 per halaman. Tipe kembaliannya adalah paginator, objek yang sama dengan yang selama ini dikirim ke view `products.index`, jadi `$products->links()` di view tetap bekerja.
+
+**`create()`**, pengganti `Product::create(...)` di `store()`:
+
+```php
+public function create(array $data): Product
+{
+    return Product::create($data);
+}
+```
+
+`$data` adalah hasil `$request->validated()` yang dikirim controller. Mass assignment tetap dijaga oleh `$fillable` di model `Product`, sama seperti sebelumnya.
+
+**`update()`**, pengganti `$product->update(...)` di `update()`:
+
+```php
+public function update(Product $product, array $data): void
+{
+    $product->update($data);
+}
+```
+
+**`delete()`**, pengganti `$product->delete()` di `destroy()`:
+
+```php
+public function delete(Product $product): void
+{
+    $product->delete();
+}
+```
+
+### Final Complete Service
+
+Here's your complete `app/Services/ProductService.php`:
+
+```php title="app/Services/ProductService.php"
+<?php
+
+namespace App\Services;
+
+use App\Models\Product;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+
+class ProductService
+{
+    public function paginate(): LengthAwarePaginator
+    {
+        return Product::latest()->paginate(10);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function create(array $data): Product
+    {
+        return Product::create($data);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function update(Product $product, array $data): void
+    {
+        $product->update($data);
+    }
+
+    public function delete(Product $product): void
+    {
+        $product->delete();
+    }
+}
+```
+
+## Langkah 4 — Coba service lewat Tinker
+
+Sebelum dipakai controller, pastikan service bisa di-resolve dan bekerja. Buka Tinker:
+
+```bash
+php artisan tinker
+```
+
+Lalu jalankan:
+
+```php
+$service = app(\App\Services\ProductService::class);
+$service->paginate()->total();
+```
+
+`app(...)` meminta service container membuatkan object `ProductService`. Hasil `total()` adalah jumlah semua produk di database. Kalau angkanya sama dengan jumlah produk yang tampil di aplikasimu, service sudah siap. Ketik `exit` untuk keluar.
+
+> **Tips:** `ProductService` tidak punya dependency apa pun di constructor, jadi container bisa membuatnya tanpa konfigurasi. Inilah yang disebut dokumentasi Laravel sebagai *zero configuration resolution*.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Target class [App\Services\ProductService] does not exist.` | Nama file, nama class, atau namespace tidak cocok | Pastikan file `app/Services/ProductService.php` berisi `namespace App\Services;` dan `class ProductService` |
+| `Class "App\Services\Product" not found` | Lupa `use App\Models\Product;` | Tambahkan baris `use` di bagian atas file |
+| `Class "App\Services\LengthAwarePaginator" not found` | Lupa import tipe paginator | Tambahkan `use Illuminate\Contracts\Pagination\LengthAwarePaginator;` |
+| `Add [name] to fillable property...` | Kolom belum ada di `$fillable` model | Model `Product` dari Modul 02 sudah benar; jangan hapus `$fillable` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa service menerima `array $data`, bukan `StoreProductRequest`?
+- [ ] Apa yang menjamin query `paginate()` berperilaku sama dengan `index()` di Modul 02?
+- [ ] Kenapa `ProductService` bisa dibuat container tanpa didaftarkan dulu?

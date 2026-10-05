@@ -1,0 +1,70 @@
+---
+title: "Kapan Perlu Service, Kapan Tidak"
+description: "Panduan memutuskan kapan logic layak dipindah ke service, tanda-tanda over-engineering, dan cara melakukan refactor bertahap yang aman."
+module: "03-service-pattern"
+order: 7
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 10
+tags: ["service-pattern", "arsitektur", "refactor"]
+nextStep: "03-service-pattern/08-latihan-refactor-book"
+---
+
+Setelah belajar Service Pattern, godaan berikutnya adalah membuat service untuk **semua hal**. Itu sama buruknya dengan controller gemuk, hanya arahnya terbalik: kodenya tersebar di banyak lapisan yang tidak menambah apa-apa. Pelajaran ini membantumu memutuskan dengan kepala dingin. Tidak ada kode baru di sini; kode proyek tetap seperti akhir pelajaran 03.
+
+## Langkah 1 — Tanda kamu butuh service
+
+Pindahkan logic ke service kalau satu atau lebih hal ini terjadi:
+
+- **Logic dipakai di lebih dari satu tempat.** Misalnya pembuatan produk dipanggil dari controller web, controller API, dan Artisan command untuk impor data.
+- **Ada aturan bisnis**, bukan sekadar simpan data. Contoh: stok tidak boleh negatif setelah transaksi, harga diskon dihitung dari beberapa aturan.
+- **Satu aksi menulis ke beberapa tabel** dan perlu `DB::transaction`.
+- **Kamu ingin menguji logic tanpa HTTP.** Tes service lebih cepat dibuat dan lebih jelas pesan gagalnya daripada membaca HTML.
+- **Method controller sudah sulit dibaca dalam sekali lihat.**
+
+## Langkah 2 — Tanda kamu belum butuh service
+
+- Aplikasi kecil dengan CRUD sederhana, seperti hasil Modul 02, yang setiap method-nya dua atau tiga baris.
+- Method service hanya meneruskan satu baris Eloquent **dan** tidak ada rencana nyata untuk memakainya di tempat lain.
+- Kamu menulis service "untuk jaga-jaga nanti". Nanti bisa di-refactor saat benar-benar perlu; tes yang kamu tulis di pelajaran 05 membuat refactor itu aman.
+
+> **Tips:** `ProductService` di modul ini sengaja dibuat untuk belajar polanya. Di proyek nyata dengan skala yang sama, full controller seperti Modul 02 masih pilihan yang sah.
+
+## Langkah 3 — Bentuk over-engineering yang sering terjadi
+
+| Gejala | Kenapa merugikan | Alternatif yang lebih sederhana |
+|---|---|---|
+| Interface untuk setiap service, padahal implementasinya hanya satu | Setiap interface harus di-*bind* manual di service container, dan pembaca harus melompat dua file untuk satu logic | Pakai class konkret; container meng-resolve-nya otomatis. Buat interface saat memang ada dua implementasi |
+| Repository di atas Eloquent yang hanya membungkus `find`, `create`, `update` | Menyalin API Eloquent tanpa menambah apa-apa | Panggil Eloquent langsung dari service |
+| Action + DTO + Service + Repository untuk satu form sederhana | Satu perubahan kecil menyentuh lima file | Mulai dari pola paling sederhana, tambah lapisan saat ada alasan konkret |
+| Service yang memakai `request()`, `session()`, atau `redirect()` | Service jadi terikat ke HTTP, kehilangan manfaat utamanya | Ambil input di controller, kirim data biasa ke service |
+
+Dokumentasi Laravel sendiri menyebutkan bahwa binding manual ke service container baru diperlukan untuk kasus tertentu, misalnya saat kamu ingin meng-inject sebuah interface. Untuk class konkret, *zero configuration resolution* sudah cukup.
+
+## Langkah 4 — Refactor bertahap yang aman
+
+Kalau kamu memutuskan perlu service di proyek yang sudah berjalan, lakukan berurutan seperti modul ini:
+
+1. **Tulis tes dulu** untuk perilaku yang sekarang (pelajaran 05). Tes ini menjadi jaring pengaman.
+2. **Buat service** yang perilakunya sama persis (pelajaran 02).
+3. **Ganti satu method controller** untuk memakai service, jalankan tes, ulangi untuk method berikutnya (pelajaran 03).
+4. **Baru tambahkan fitur baru** di service, setelah semua tes hijau (pelajaran 04).
+
+Jangan mencampur refactor dan fitur baru dalam satu langkah. Kalau tes gagal, kamu tidak akan tahu penyebabnya: refactor atau fiturnya.
+
+## Langkah 5 — Ringkasan keputusan
+
+| Situasi | Pilihan |
+|---|---|
+| CRUD kecil, logic satu baris per method | Full controller (Modul 02) |
+| Logic dipakai ulang atau mulai ada aturan bisnis | Service (Modul 03) |
+| Satu aksi kompleks dipanggil dari banyak tempat | Action class |
+| Data yang sama dioper melewati banyak lapisan | Tambahkan DTO |
+
+## Cek pemahamanmu
+
+- [ ] Sebutkan tiga tanda bahwa logic layak dipindah ke service.
+- [ ] Kenapa membuat interface untuk setiap service termasuk over-engineering di proyek kecil?
+- [ ] Kenapa tes ditulis **sebelum** refactor?
+- [ ] Kenapa refactor dan fitur baru sebaiknya tidak dicampur?

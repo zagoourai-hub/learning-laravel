@@ -1,0 +1,97 @@
+---
+title: "Checklist Deploy dan Troubleshooting"
+description: "Gabungkan semua langkah deploy laravel13-crud menjadi satu urutan, pakai maintenance mode selama update, dan atasi error produksi yang paling sering muncul."
+module: "08-deploy"
+order: 5
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["deploy", "checklist", "maintenance-mode", "troubleshooting"]
+---
+
+Kamu sudah mempelajari tiap bagian deploy secara terpisah. Di pelajaran terakhir modul ini, semuanya digabung menjadi satu urutan yang bisa kamu ikuti setiap kali memperbarui `laravel13-crud` di server, lengkap dengan cara menangani error yang paling sering muncul.
+
+## Langkah 1 — Maintenance mode saat update
+
+Saat update berlangsung (migration berjalan, cache dibuat ulang), sebaiknya pengunjung tidak mengakses aplikasi yang setengah jadi. Laravel punya maintenance mode yang menampilkan halaman khusus untuk semua request, dengan status HTTP 503:
+
+```bash
+php artisan down
+```
+
+Supaya kamu tetap bisa mengecek aplikasi selama maintenance, buat token rahasia:
+
+```bash
+php artisan down --with-secret
+```
+
+Laravel akan menampilkan token sekali saat maintenance aktif. Kalau ingin menentukan token sendiri, pakai `--secret="token-pilihanmu"`.
+
+Setelah selesai, nyalakan lagi aplikasinya:
+
+```bash
+php artisan up
+```
+
+## Langkah 2 — Urutan deploy
+
+Jalankan dari folder proyek di server, setelah kode terbaru dari repository sudah ditarik:
+
+```bash
+php artisan down --with-secret
+composer install
+npm run build
+php artisan migrate --force
+php artisan optimize
+php artisan up
+```
+
+Kalau aplikasimu memakai queue worker atau layanan yang berjalan lama, muat ulang layanan itu setelah deploy:
+
+```bash
+php artisan reload
+```
+
+## Langkah 3 — Checklist sebelum menekan tombol deploy
+
+Setup pertama kali (sekali saja):
+
+- [ ] Server memakai PHP 8.3+ dengan ekstensi yang dibutuhkan (pelajaran 01)
+- [ ] `.env` dibuat dari `.env.example`, berisi `APP_ENV=production` dan `APP_DEBUG=false`
+- [ ] `php artisan key:generate` sudah dijalankan dan `APP_KEY` terisi
+- [ ] Database siap: file SQLite dengan path absolut, atau database MySQL `laravel13_crud` (pelajaran 03)
+- [ ] Root web server menunjuk ke folder `public` (pelajaran 04)
+- [ ] Folder `storage` dan `bootstrap/cache` bisa ditulis oleh web server
+
+Setiap deploy:
+
+- [ ] `npm run build` berhasil
+- [ ] `php artisan migrate --force` berhasil
+- [ ] `php artisan optimize` dijalankan setelah semua perubahan
+- [ ] `https://domainmu/up` merespons normal
+- [ ] `https://domainmu/products` tampil, dan tambah, edit, serta hapus produk berjalan
+
+## Troubleshooting
+
+Karena `APP_DEBUG=false`, error di produksi hanya tampil sebagai halaman error umum. Detailnya ada di log aplikasi, di folder `storage/logs`. Biasakan membuka log dulu sebelum menebak-nebak.
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Halaman 500 tanpa detail | Error aplikasi; detail disembunyikan karena `APP_DEBUG=false` | Baca log di `storage/logs` |
+| 500 dengan pesan permission di log | Web server tidak bisa menulis ke `storage` atau `bootstrap/cache` | Beri izin tulis ke pemilik proses web server |
+| `Unable to locate file in Vite manifest` | Asset belum di-build di server | Jalankan `npm run build` |
+| Perubahan `.env` atau route tidak berpengaruh | Konfigurasi atau route masih di-cache | `php artisan optimize:clear`, lalu `php artisan optimize` |
+| `env()` mengembalikan `null` | `env()` dipanggil di luar file config setelah `config:cache` | Pakai `config()` di kode aplikasi |
+| Semua halaman 503 setelah deploy | Maintenance mode masih aktif | `php artisan up` |
+| Error enkripsi / `APP_KEY` kosong | `.env` server tidak berisi `APP_KEY` | `php artisan key:generate` (sekali saja) |
+| `/products/create` 404 dari Nginx | Request tidak diteruskan ke `index.php` | Periksa blok `location /` dan `try_files` di konfigurasi Nginx |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa `php artisan down` dijalankan sebelum migration?
+- [ ] Apa gunanya `--with-secret`?
+- [ ] Di mana mencari detail error saat `APP_DEBUG=false`?
+- [ ] Urutkan: `php artisan optimize`, `npm run build`, `php artisan migrate --force`.
+
+Selamat, aplikasi CRUD Product-mu sekarang bisa dipakai siapa saja lewat internet.

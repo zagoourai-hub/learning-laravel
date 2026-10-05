@@ -1,0 +1,68 @@
+---
+title: "Roadmap Belajar & Apa Itu Laravel"
+description: "Kenali Laravel 13, pola Model–View–Controller di dalamnya, dan jalur belajar dari instalasi sampai deploy di situs ini."
+module: "01-persiapan"
+order: 1
+level: "pemula"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 10
+tags: ["pengenalan", "mvc", "roadmap"]
+nextStep: "01-persiapan/02-instalasi"
+---
+
+Sebelum menulis kode, ada baiknya kamu tahu dulu **apa itu Laravel**, bagaimana sebuah request diproses, dan ke mana jalur belajar ini akan membawamu. Pelajaran ini tanpa kode, jadi santai saja.
+
+## Apa itu Laravel?
+
+Laravel adalah framework aplikasi web PHP dengan sintaks yang ekspresif dan rapi. Laravel memberi kamu titik awal yang terstruktur, jadi kamu tidak perlu menyusun semuanya dari nol. Di dalamnya sudah tersedia fitur seperti dependency injection, lapisan database yang ekspresif (Eloquent), queue, scheduled job, dan dukungan testing.
+
+Dokumentasi resmi menyebut Laravel sebagai framework yang **progresif**: ramah untuk pemula, tetapi tetap menyediakan alat tingkat lanjut (dependency injection, unit testing, queue, real-time event) yang dipakai di aplikasi profesional dan enterprise. Artinya, apa yang kamu pelajari di sini tetap terpakai ketika aplikasimu membesar.
+
+> **Tips:** Laravel 13 dirilis 17 Maret 2026 dan membutuhkan **PHP 8.3 sampai 8.5**. Perbaikan bug diberikan sampai Q3 2027 dan perbaikan keamanan sampai 17 Maret 2028.
+
+## Model, View, Controller
+
+Kode aplikasi Laravel dibagi ke beberapa tempat sesuai perannya. Tiga peran yang akan paling sering kamu temui:
+
+| Peran | Lokasi | Tugasnya |
+|---|---|---|
+| **Model** | `app/Models` | Class Eloquent yang mewakili satu tabel database; dipakai untuk membaca dan menyimpan data. |
+| **View** | `resources/views` | Template HTML berakhiran `.blade.php` (Blade) yang ditampilkan ke pengguna. |
+| **Controller** | `app/Http/Controllers` | Class yang mengelompokkan logic penanganan request, misalnya `ProductController` untuk semua aksi terkait produk. |
+
+Satu lagi yang menghubungkan semuanya: **route**. Route ditulis di folder `routes` dan menentukan URL mana yang ditangani oleh kode mana.
+
+## Perjalanan sebuah request
+
+Secara sederhana, inilah yang terjadi ketika pengguna membuka `http://localhost:8000/products`:
+
+1. Semua request masuk lewat `public/index.php`, pintu masuk tunggal aplikasi.
+2. Laravel mencocokkan URL dengan route yang terdaftar di `routes/web.php`.
+3. Route meneruskan request ke method controller, misalnya `ProductController@index`.
+4. Controller mengambil data lewat model (`Product`).
+5. Controller mengembalikan view Blade berisi data tersebut, lalu HTML-nya dikirim ke browser.
+
+Kamu akan membangun alur persis seperti ini di Modul 02.
+
+## Jalur belajar di situs ini
+
+| Modul | Isi | Hasil |
+|---|---|---|
+| **01 — Persiapan** | Pengenalan, instalasi, struktur folder, routing dasar | Proyek Laravel 13 berjalan di komputermu |
+| **02 — CRUD Pemula** | Migration, model, resource controller, Form Request, Blade, pagination | Aplikasi manajemen produk lengkap, semua logic di controller |
+| **03 — Service Pattern** | Memindahkan logic ke `ProductService`, controller tipis, testing service | Kode yang sama, tetapi lebih rapi dan mudah diuji |
+| **04 — Eloquent Relationships** | Relasi antar-tabel | Produk punya kategori |
+| **05 — Autentikasi** | Login dan proteksi halaman | Hanya pengguna terdaftar yang bisa mengelola produk |
+| **06 — API Resource & REST** | Endpoint JSON | API produk untuk aplikasi lain |
+| **07 — Testing** | Test otomatis | CRUD produk teruji |
+| **08 — Deploy** | Menyiapkan aplikasi untuk produksi | Aplikasi online |
+
+Ikuti modul secara berurutan. Modul 03–08 semuanya berangkat dari kode akhir Modul 02, jadi pastikan CRUD produkmu sudah berjalan sebelum lanjut.
+
+## Cek pemahamanmu
+
+- [ ] Kenapa Laravel disebut framework yang progresif?
+- [ ] Di folder mana model, view, dan controller disimpan?
+- [ ] File apa yang menjadi pintu masuk semua request?
+- [ ] Apa peran route dalam alur sebuah request?

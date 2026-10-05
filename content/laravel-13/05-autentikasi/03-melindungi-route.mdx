@@ -1,0 +1,162 @@
+---
+title: "Melindungi Route Produk dengan Middleware auth"
+description: "Bungkus Route::resource products dengan middleware auth, tampilkan nama user dan tombol logout di layout memakai @auth dan @guest."
+module: "05-autentikasi"
+order: 3
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["middleware", "auth", "blade", "route-group"]
+prerequisites: ["05-autentikasi/02-register-login-logout"]
+nextStep: "05-autentikasi/04-produk-milik-user"
+---
+
+Login sudah bisa, tetapi halaman produk masih terbuka untuk siapa saja. Di pelajaran ini semua route produk hanya bisa dibuka oleh user yang sudah login, dan layout menampilkan siapa yang sedang login beserta tombol logout.
+
+## Yang akan kamu buat
+
+- Grup route dengan middleware `auth` untuk semua route produk
+- Menu di layout: nama user + tombol Logout saat login, link Login/Daftar saat belum
+
+---
+
+## Langkah 1 — Bungkus route produk dengan middleware auth
+
+Laravel menyediakan middleware `auth`. Tamu yang membuka route yang dilindunginya akan diarahkan ke route bernama `login`. Daripada memasang middleware di setiap route, bungkus semuanya dalam satu grup:
+
+```php
+Route::middleware('auth')->group(function () {
+    Route::resource('products', ProductController::class);
+});
+```
+
+Semua route dari `Route::resource` (index, create, store, show, edit, update, destroy) sekarang terlindungi sekaligus.
+
+Here's your complete `routes/web.php`:
+
+```php title="routes/web.php"
+<?php
+
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ProductController;
+use Illuminate\Support\Facades\Route;
+
+Route::redirect('/', '/products');
+
+Route::middleware('guest')->group(function () {
+    Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
+    Route::post('/login', [AuthController::class, 'login']);
+});
+
+Route::middleware('auth')->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+    Route::resource('products', ProductController::class);
+});
+```
+
+Route logout ikut dipindah ke grup `auth`, jadi `->middleware('auth')` di route itu tidak diperlukan lagi.
+
+## Langkah 2 — Menu user di layout
+
+Directive Blade `@auth` hanya menampilkan isinya untuk user yang sudah login, dan `@guest` untuk yang belum. `Auth::user()` mengembalikan model `User` yang sedang login.
+
+Tambahkan blok `<header>` ini di atas `<main>` pada layout dari Modul 02:
+
+```blade
+<header class="border-b bg-white">
+    <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 text-sm">
+        <a href="{{ route('products.index') }}" class="font-semibold">Laravel 13 CRUD</a>
+
+        <div class="flex items-center gap-4">
+            @auth
+                <span class="text-gray-600">{{ Auth::user()->name }}</span>
+                <form action="{{ route('logout') }}" method="POST">
+                    @csrf
+                    <button type="submit" class="text-red-600 hover:text-red-900">Logout</button>
+                </form>
+            @endauth
+
+            @guest
+                <a href="{{ route('login') }}" class="text-indigo-600 hover:text-indigo-900">Login</a>
+                <a href="{{ route('register') }}" class="text-indigo-600 hover:text-indigo-900">Daftar</a>
+            @endguest
+        </div>
+    </div>
+</header>
+```
+
+Tombol logout adalah form POST lengkap dengan `@csrf`, sesuai route yang kita buat.
+
+Here's your complete `resources/views/layouts/app.blade.php`:
+
+```blade title="resources/views/layouts/app.blade.php"
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@yield('title', 'Laravel 13 CRUD')</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <header class="border-b bg-white">
+        <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 text-sm">
+            <a href="{{ route('products.index') }}" class="font-semibold">Laravel 13 CRUD</a>
+
+            <div class="flex items-center gap-4">
+                @auth
+                    <span class="text-gray-600">{{ Auth::user()->name }}</span>
+                    <form action="{{ route('logout') }}" method="POST">
+                        @csrf
+                        <button type="submit" class="text-red-600 hover:text-red-900">Logout</button>
+                    </form>
+                @endauth
+
+                @guest
+                    <a href="{{ route('login') }}" class="text-indigo-600 hover:text-indigo-900">Login</a>
+                    <a href="{{ route('register') }}" class="text-indigo-600 hover:text-indigo-900">Daftar</a>
+                @endguest
+            </div>
+        </div>
+    </header>
+
+    <main class="mx-auto max-w-5xl px-4 py-10">
+        @if (session('success'))
+            <div class="mb-6 rounded-md bg-green-100 px-4 py-3 text-green-800">
+                {{ session('success') }}
+            </div>
+        @endif
+
+        @yield('content')
+    </main>
+</body>
+</html>
+```
+
+---
+
+## Uji coba
+
+1. Klik **Logout** → diarahkan ke halaman login.
+2. Buka `/products` tanpa login → otomatis diarahkan ke `/login`.
+3. Buka langsung `/products/create`, lalu login → kamu dikembalikan ke `/products/create`, bukan ke daftar produk. Inilah hasil kerja `redirect()->intended()` dari pelajaran sebelumnya.
+4. Setelah login, menu kanan atas menampilkan namamu dan tombol Logout. Saat belum login, menu menampilkan Login dan Daftar.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Halaman produk masih bisa dibuka tanpa login | `Route::resource` masih di luar grup `auth` | Pindahkan ke dalam `Route::middleware('auth')->group(...)` |
+| `Route [logout] not defined` | Route logout belum diberi nama | Tambahkan `->name('logout')` |
+| `419 Page Expired` saat logout | Form logout tanpa `@csrf` | Tambahkan `@csrf` di form logout |
+| `Attempt to read property "name" on null` | `Auth::user()` dipanggil saat belum login | Taruh di dalam `@auth ... @endauth` |
+
+## Cek pemahamanmu
+
+- [ ] Ke mana middleware `auth` mengarahkan tamu, dan kenapa nama route `login` penting?
+- [ ] Apa keuntungan `Route::middleware('auth')->group(...)` dibanding memasang middleware satu per satu?
+- [ ] Kapan isi `@auth` ditampilkan, dan kapan isi `@guest`?

@@ -1,0 +1,310 @@
+---
+title: "Authorization dengan ProductPolicy"
+description: "Buat ProductPolicy dengan make:policy, cek kepemilikan produk dengan Gate::authorize di controller, dan sembunyikan tombol Edit/Hapus dengan @can di Blade."
+module: "05-autentikasi"
+order: 5
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 25
+tags: ["authorization", "policy", "gate", "blade", "403"]
+prerequisites: ["05-autentikasi/04-produk-milik-user"]
+nextStep: "05-autentikasi/06-latihan-autentikasi"
+---
+
+Di akhir pelajaran sebelumnya, user B masih bisa membuka `/products/1/edit` milik user A. Daftar yang tersaring tidak menghentikan orang yang mengetik URL langsung. Aturan "hanya pemilik yang boleh melihat, mengubah, dan menghapus produk" perlu dicek di **setiap** method yang menerima `Product`. Tempat yang tepat untuk aturan itu adalah **Policy**.
+
+## Yang akan kamu buat
+
+- `app/Policies/ProductPolicy.php` dengan method `view`, `update`, `delete`
+- Pengecekan `Gate::authorize(...)` di `show`, `edit`, `update`, `destroy`
+- Tombol Edit dan Hapus yang hanya tampil untuk pemilik (`@can`)
+
+---
+
+## Langkah 1 — Buat ProductPolicy
+
+```bash
+php artisan make:policy ProductPolicy --model=Product
+```
+
+Opsi `--model=Product` mengisi policy dengan contoh method untuk aksi umum (`viewAny`, `view`, `create`, `update`, `delete`, dan seterusnya). Kita hanya butuh tiga.
+
+**Policy ditemukan otomatis.** Laravel mencocokkan policy dengan model berdasarkan nama: model di `app/Models` dipasangkan dengan policy di `app/Policies` yang namanya sama dengan nama model ditambah akhiran `Policy`. `Product` ↔ `ProductPolicy`, jadi tidak perlu mendaftarkan apa pun.
+
+## Langkah 2 — Tulis aturannya
+
+Setiap method policy menerima user yang sedang login dan produk yang sedang diakses, lalu mengembalikan `true` (boleh) atau `false` (tidak boleh). Ganti isi file hasil generate dengan versi ringkas ini:
+
+Here's your complete `app/Policies/ProductPolicy.php`:
+
+```php title="app/Policies/ProductPolicy.php"
+<?php
+
+namespace App\Policies;
+
+use App\Models\Product;
+use App\Models\User;
+
+class ProductPolicy
+{
+    public function view(User $user, Product $product): bool
+    {
+        return $user->id === $product->user_id;
+    }
+
+    public function update(User $user, Product $product): bool
+    {
+        return $user->id === $product->user_id;
+    }
+
+    public function delete(User $user, Product $product): bool
+    {
+        return $user->id === $product->user_id;
+    }
+}
+```
+
+Ketiganya memakai aturan yang sama sekarang, tetapi dipisah per aksi supaya mudah dibedakan nanti. Misalnya kelak semua user boleh melihat produk, tetapi hanya pemilik yang boleh menghapus.
+
+## Langkah 3 — Cek izin di controller dengan Gate::authorize
+
+`Gate::authorize('update', $product)` memanggil method `update` di `ProductPolicy`. Kalau hasilnya `false`, Laravel melempar `AuthorizationException`, dan Laravel mengubahnya menjadi respons **403 Forbidden**. Kalau `true`, kode berikutnya berjalan seperti biasa.
+
+```php
+public function edit(Product $product): View
+{
+    Gate::authorize('update', $product);
+
+    return view('products.edit', compact('product'));
+}
+```
+
+Pasang di empat method yang menerima `Product`:
+
+| Method | Aksi policy |
+|---|---|
+| `show()` | `view` |
+| `edit()` | `update` |
+| `update()` | `update` |
+| `destroy()` | `delete` |
+
+`edit()` dan `update()` sama-sama dicek. Kalau hanya `edit()` yang dicek, orang masih bisa mengirim form PUT langsung ke `update()`.
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/ProductController.php`:
+
+```php title="app/Http/Controllers/ProductController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Product;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\View\View;
+
+class ProductController extends Controller
+{
+    public function index(Request $request): View
+    {
+        $products = Product::whereBelongsTo($request->user())
+            ->latest()
+            ->paginate(10);
+
+        return view('products.index', compact('products'));
+    }
+
+    public function create(): View
+    {
+        return view('products.create');
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        Product::create([
+            ...$request->validated(),
+            'user_id' => $request->user()->id,
+        ]);
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil ditambahkan.');
+    }
+
+    public function show(Product $product): View
+    {
+        Gate::authorize('view', $product);
+
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product): View
+    {
+        Gate::authorize('update', $product);
+
+        return view('products.edit', compact('product'));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        Gate::authorize('update', $product);
+
+        $product->update($request->validated());
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil diperbarui.');
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        Gate::authorize('delete', $product);
+
+        $product->delete();
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil dihapus.');
+    }
+}
+```
+
+## Langkah 4 — Tampilkan tombol hanya untuk yang berhak
+
+Directive `@can('update', $product)` memakai policy yang sama untuk memutuskan apakah isinya ditampilkan. Di daftar produk semua produk memang milikmu, tetapi membungkus tombol dengan `@can` membuat view tetap benar kalau nanti aturan daftar produk berubah. Halaman detail mendapat perlakuan yang sama.
+
+Here's your complete `resources/views/products/index.blade.php`:
+
+```blade title="resources/views/products/index.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Daftar Produk')
+
+@section('content')
+    <div class="mb-6 flex items-center justify-between">
+        <h1 class="text-2xl font-bold">Daftar Produk</h1>
+        <a href="{{ route('products.create') }}"
+           class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+            + Tambah Produk
+        </a>
+    </div>
+
+    <div class="overflow-x-auto rounded-md bg-white shadow">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50 text-left text-sm font-semibold">
+                <tr>
+                    <th class="px-6 py-3">Nama</th>
+                    <th class="px-6 py-3">Harga</th>
+                    <th class="px-6 py-3">Stok</th>
+                    <th class="px-6 py-3">Aksi</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 text-sm">
+                @forelse ($products as $product)
+                    <tr>
+                        <td class="px-6 py-4">{{ $product->name }}</td>
+                        <td class="px-6 py-4">Rp {{ number_format($product->price, 0, ',', '.') }}</td>
+                        <td class="px-6 py-4">{{ $product->stock }}</td>
+                        <td class="px-6 py-4">
+                            <a href="{{ route('products.show', $product) }}"
+                               class="mr-3 text-gray-600 hover:text-gray-900">Detail</a>
+                            @can('update', $product)
+                                <a href="{{ route('products.edit', $product) }}"
+                                   class="mr-3 text-indigo-600 hover:text-indigo-900">Edit</a>
+                            @endcan
+                            @can('delete', $product)
+                                <form action="{{ route('products.destroy', $product) }}"
+                                      method="POST"
+                                      class="inline"
+                                      onsubmit="return confirm('Yakin ingin menghapus produk ini?')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="text-red-600 hover:text-red-900">
+                                        Hapus
+                                    </button>
+                                </form>
+                            @endcan
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center text-gray-500">
+                            Belum ada data produk.
+                        </td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mt-6">
+        {{ $products->links() }}
+    </div>
+@endsection
+```
+
+Here's your complete `resources/views/products/show.blade.php`:
+
+```blade title="resources/views/products/show.blade.php"
+@extends('layouts.app')
+
+@section('title', $product->name)
+
+@section('content')
+    <div class="rounded-md bg-white p-6 shadow">
+        <h1 class="mb-4 text-2xl font-bold">{{ $product->name }}</h1>
+
+        <dl class="space-y-3 text-sm">
+            <div>
+                <dt class="font-semibold">Deskripsi</dt>
+                <dd>{{ $product->description ?: '-' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Harga</dt>
+                <dd>Rp {{ number_format($product->price, 0, ',', '.') }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Stok</dt>
+                <dd>{{ $product->stock }}</dd>
+            </div>
+        </dl>
+
+        <div class="mt-6 flex gap-3">
+            @can('update', $product)
+                <a href="{{ route('products.edit', $product) }}"
+                   class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">Edit</a>
+            @endcan
+            <a href="{{ route('products.index') }}"
+               class="rounded-md border px-4 py-2 hover:bg-gray-50">Kembali</a>
+        </div>
+    </div>
+@endsection
+```
+
+> **Penting:** `@can` hanya menyembunyikan tombol, **bukan** pengaman. Pengaman yang sebenarnya adalah `Gate::authorize()` di controller. Tanpa itu, siapa pun tetap bisa mengirim request langsung ke URL-nya.
+
+---
+
+## Uji coba
+
+1. Sebagai user B, buka `/products/1`, `/products/1/edit` milik user A → **403**.
+2. User B mencoba menghapus produk A (misalnya mengirim form DELETE dari DevTools) → **403**, produk tetap ada.
+3. User A membuka, mengedit, dan menghapus produknya sendiri → semua berjalan normal.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Pemilik sendiri mendapat 403 | Produk lama `user_id`-nya `null` atau milik user lain | Cek `user_id` produk, jalankan Tinker di pelajaran sebelumnya |
+| Policy tidak terpanggil, semua user selalu ditolak | Nama atau folder policy tidak sesuai konvensi | Pastikan file `app/Policies/ProductPolicy.php` dengan class `ProductPolicy` |
+| `Class "App\Http\Controllers\Gate" not found` | Lupa import facade | Tambahkan `use Illuminate\Support\Facades\Gate;` |
+| Edit diblokir tetapi update lewat form masih bisa | `Gate::authorize` hanya dipasang di `edit()` | Pasang juga di `update()` |
+
+## Cek pemahamanmu
+
+- [ ] Bagaimana Laravel tahu bahwa `ProductPolicy` milik model `Product`?
+- [ ] Apa yang terjadi saat `Gate::authorize()` menolak akses?
+- [ ] Kenapa `edit()` dan `update()` sama-sama perlu dicek?
+- [ ] Kenapa `@can` di Blade saja tidak cukup untuk keamanan?

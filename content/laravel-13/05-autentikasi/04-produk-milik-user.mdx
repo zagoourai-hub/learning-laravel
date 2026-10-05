@@ -1,0 +1,257 @@
+---
+title: "Produk Milik User"
+description: "Tambahkan kolom user_id dengan foreign key, relasi belongsTo User, simpan pemilik saat membuat produk, dan tampilkan hanya produk milik user yang login dengan whereBelongsTo."
+module: "05-autentikasi"
+order: 4
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 25
+tags: ["autentikasi", "foreign-key", "belongsTo", "whereBelongsTo"]
+prerequisites: ["05-autentikasi/03-melindungi-route"]
+nextStep: "05-autentikasi/05-authorization-policy"
+---
+
+Sekarang hanya user yang login yang bisa mengelola produk. Tetapi semua user masih melihat dan mengubah **produk yang sama**. Di pelajaran ini setiap produk dicatat pemiliknya, dan daftar produk hanya menampilkan produk milik user yang sedang login.
+
+## Yang akan kamu buat
+
+- Kolom `user_id` di tabel `products` lengkap dengan foreign key
+- Relasi `Product::user()`
+- Pemilik tersimpan otomatis saat produk dibuat
+- Daftar produk yang hanya berisi produk milikmu
+
+---
+
+## Langkah 1 — Tambah kolom user_id
+
+```bash
+php artisan make:migration add_user_id_to_products_table
+```
+
+Here's your complete `database/migrations/xxxx_xx_xx_xxxxxx_add_user_id_to_products_table.php`:
+
+```php title="database/migrations/xxxx_xx_xx_xxxxxx_add_user_id_to_products_table.php"
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('products', function (Blueprint $table) {
+            $table->foreignId('user_id')
+                ->nullable()
+                ->constrained()
+                ->cascadeOnDelete();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('products', function (Blueprint $table) {
+            $table->dropForeign(['user_id']);
+            $table->dropColumn('user_id');
+        });
+    }
+};
+```
+
+- `foreignId('user_id')->constrained()` membuat foreign key ke tabel `users` kolom `id`.
+- `nullable()` diperlukan karena produk yang sudah ada belum punya pemilik. Modifier ini harus ditulis **sebelum** `constrained()`.
+- `cascadeOnDelete()` ikut menghapus produk saat akun pemiliknya dihapus.
+
+```bash
+php artisan migrate
+```
+
+## Langkah 2 — Berikan pemilik ke produk lama
+
+Produk yang dibuat sebelum pelajaran ini punya `user_id` kosong, sehingga nanti tidak muncul di daftar siapa pun. Serahkan ke akunmu lewat Tinker (ganti `1` dengan ID akunmu):
+
+```bash
+php artisan tinker
+```
+
+```php
+App\Models\Product::whereNull('user_id')->update(['user_id' => 1]);
+```
+
+Ketik `exit` untuk keluar.
+
+## Langkah 3 — Relasi user di model Product
+
+Dua perubahan dari versi Modul 02: `user_id` masuk `$fillable`, dan method `user()`.
+
+Here's your complete `app/Models/Product.php`:
+
+```php title="app/Models/Product.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class Product extends Model
+{
+    protected $fillable = [
+        'name',
+        'description',
+        'price',
+        'stock',
+        'user_id',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'price' => 'decimal:2',
+            'stock' => 'integer',
+        ];
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+}
+```
+
+> **Penting:** `user_id` **tidak** ditambahkan ke Form Request. Pemilik selalu diambil dari user yang sedang login di controller, bukan dari input form, jadi pengguna tidak bisa membuat produk atas nama orang lain dengan memodifikasi form.
+
+## Langkah 4 — Simpan pemilik dan saring daftar produk
+
+Dua method yang berubah:
+
+**`index()` — hanya produk milik user yang login**
+
+```php
+public function index(Request $request): View
+{
+    $products = Product::whereBelongsTo($request->user())
+        ->latest()
+        ->paginate(10);
+
+    return view('products.index', compact('products'));
+}
+```
+
+`$request->user()` mengembalikan model `User` yang sedang login. `whereBelongsTo($user)` menentukan sendiri relasi dan foreign key-nya (`user_id`) dari model yang diberikan, jadi hasilnya sama dengan `where('user_id', $user->id)`, hanya lebih ekspresif.
+
+**`store()` — catat pemiliknya**
+
+```php
+public function store(StoreProductRequest $request): RedirectResponse
+{
+    Product::create([
+        ...$request->validated(),
+        'user_id' => $request->user()->id,
+    ]);
+
+    return to_route('products.index')
+        ->with('success', 'Produk berhasil ditambahkan.');
+}
+```
+
+`...$request->validated()` menyalin semua data yang lolos validasi, lalu `user_id` ditambahkan dari user yang login.
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/ProductController.php`:
+
+```php title="app/Http/Controllers/ProductController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Product;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+class ProductController extends Controller
+{
+    public function index(Request $request): View
+    {
+        $products = Product::whereBelongsTo($request->user())
+            ->latest()
+            ->paginate(10);
+
+        return view('products.index', compact('products'));
+    }
+
+    public function create(): View
+    {
+        return view('products.create');
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        Product::create([
+            ...$request->validated(),
+            'user_id' => $request->user()->id,
+        ]);
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil ditambahkan.');
+    }
+
+    public function show(Product $product): View
+    {
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product): View
+    {
+        return view('products.edit', compact('product'));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        $product->update($request->validated());
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil diperbarui.');
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        $product->delete();
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil dihapus.');
+    }
+}
+```
+
+View tidak perlu diubah.
+
+---
+
+## Uji coba
+
+1. Login sebagai user A → tambah produk "Kopi A" → muncul di daftar.
+2. Logout, daftar akun baru (user B) → daftar produk **kosong**.
+3. User B menambah "Teh B" → hanya "Teh B" yang tampil.
+4. **Masalah yang tersisa:** sebagai user B, buka langsung URL detail atau edit produk milik A, misalnya `/products/1/edit`. Halaman itu masih terbuka, bahkan bisa disimpan. Daftar memang sudah tersaring, tetapi akses lewat URL belum dicegah. Itu tugas **Policy** di pelajaran berikutnya.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Produk lama hilang dari daftar | `user_id` produk lama masih `null` | Jalankan perintah Tinker di Langkah 2 |
+| Produk baru tidak muncul di daftar | `user_id` tidak tersimpan karena belum ada di `$fillable` | Tambahkan `'user_id'` ke `$fillable` |
+| `Call to undefined relationship [user]` saat `whereBelongsTo` | Method `user()` belum ada di model `Product` | Tambahkan relasi `user()` |
+| `Call to a member function ... on null` di `$request->user()` | Route produk di luar grup `auth` | Pastikan `Route::resource` ada di dalam grup `auth` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa `user_id` diisi di controller, bukan dari input form?
+- [ ] Apa yang dilakukan `whereBelongsTo($request->user())`?
+- [ ] Kenapa menyaring daftar produk belum cukup untuk melindungi produk milik orang lain?

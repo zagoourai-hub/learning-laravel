@@ -1,0 +1,245 @@
+---
+title: "Controller Tipis dengan Constructor Injection"
+description: "Hubungkan ProductService ke ProductController lewat constructor injection, sehingga controller hanya mengurus request dan response tanpa mengubah perilaku aplikasi."
+module: "03-service-pattern"
+order: 3
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["service-pattern", "dependency-injection", "service-container", "controller"]
+nextStep: "03-service-pattern/04-memindah-logic"
+---
+
+Service sudah siap. Sekarang `ProductController` kita ubah supaya memakai `ProductService`, bukan memanggil model `Product` langsung untuk operasi data. Hasilnya adalah **controller tipis**: setiap method hanya menerima input, memanggil service, lalu mengembalikan view atau redirect.
+
+Yang tidak berubah: route, view, model, migration, `StoreProductRequest`, `UpdateProductRequest`, teks pesan sukses, dan perilaku aplikasi. Pengguna tidak akan melihat perbedaan apa pun.
+
+## Langkah 1 — Pahami constructor injection
+
+Dokumentasi Laravel menjelaskan bahwa semua controller di-resolve oleh **service container**. Karena itu kamu boleh menulis tipe dependency di constructor controller, dan container akan membuat lalu menyuntikkan object-nya secara otomatis.
+
+Di PHP 8, cara paling ringkas adalah *constructor property promotion*:
+
+```php
+public function __construct(
+    protected ProductService $products,
+) {}
+```
+
+Satu baris itu sekaligus melakukan tiga hal: mendeklarasikan property `$products`, menerima `ProductService` sebagai parameter, dan menyimpannya ke property. Setelah itu, method mana pun di controller bisa memakai `$this->products`.
+
+Kita tidak perlu mendaftarkan `ProductService` di service provider. `ProductService` adalah class konkret tanpa dependency, jadi container bisa membuatnya sendiri.
+
+> **Penting:** nama property `$products` dipilih karena isinya adalah "pengelola produk". Jangan tertukar dengan variabel `$products` di dalam `index()` yang berisi hasil paginasi; yang satu diakses lewat `$this->products`, yang lain variabel lokal biasa.
+
+## Langkah 2 — Kode sebelum refactor
+
+Ini controller akhir Modul 02 yang akan kita ubah:
+
+```php title="app/Http/Controllers/ProductController.php (sebelum)"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Product;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
+
+class ProductController extends Controller
+{
+    public function index(): View
+    {
+        $products = Product::latest()->paginate(10);
+
+        return view('products.index', compact('products'));
+    }
+
+    public function create(): View
+    {
+        return view('products.create');
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        Product::create($request->validated());
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil ditambahkan.');
+    }
+
+    public function show(Product $product): View
+    {
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product): View
+    {
+        return view('products.edit', compact('product'));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        $product->update($request->validated());
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil diperbarui.');
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        $product->delete();
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil dihapus.');
+    }
+}
+```
+
+## Langkah 3 — Ganti method yang menyentuh database
+
+Hanya empat method yang berubah. Bandingkan baris per baris:
+
+**`index()`**
+
+```php
+// sebelum
+$products = Product::latest()->paginate(10);
+
+// sesudah
+$products = $this->products->paginate();
+```
+
+**`store()`**
+
+```php
+// sebelum
+Product::create($request->validated());
+
+// sesudah
+$this->products->create($request->validated());
+```
+
+**`update()`**
+
+```php
+// sebelum
+$product->update($request->validated());
+
+// sesudah
+$this->products->update($product, $request->validated());
+```
+
+**`destroy()`**
+
+```php
+// sebelum
+$product->delete();
+
+// sesudah
+$this->products->delete($product);
+```
+
+Method `create()`, `show()`, dan `edit()` tidak berubah. `show()` dan `edit()` tetap menerima `Product $product` lewat route model binding, karena mengambil satu model berdasarkan parameter route memang urusan HTTP.
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/ProductController.php`:
+
+```php title="app/Http/Controllers/ProductController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Product;
+use App\Services\ProductService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
+
+class ProductController extends Controller
+{
+    public function __construct(
+        protected ProductService $products,
+    ) {}
+
+    public function index(): View
+    {
+        $products = $this->products->paginate();
+
+        return view('products.index', compact('products'));
+    }
+
+    public function create(): View
+    {
+        return view('products.create');
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        $this->products->create($request->validated());
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil ditambahkan.');
+    }
+
+    public function show(Product $product): View
+    {
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product): View
+    {
+        return view('products.edit', compact('product'));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        $this->products->update($product, $request->validated());
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil diperbarui.');
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        $this->products->delete($product);
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil dihapus.');
+    }
+}
+```
+
+`use App\Models\Product;` tetap dibutuhkan karena `show()`, `edit()`, `update()`, dan `destroy()` masih memakai tipe `Product` untuk route model binding.
+
+## Langkah 4 — Uji coba
+
+Jalankan aplikasi (`composer run dev`) lalu ulangi checklist dari Modul 02. Semuanya harus berperilaku **persis sama**:
+
+1. Halaman daftar menampilkan produk terbaru dulu, 10 per halaman, dengan link pagination.
+2. Kirim form tambah kosong: pesan error validasi muncul dan input tidak hilang.
+3. Tambah produk valid: kembali ke daftar dengan pesan "Produk berhasil ditambahkan."
+4. Edit produk: pesan "Produk berhasil diperbarui."
+5. Hapus produk: pesan "Produk berhasil dihapus."
+
+Kalau ada satu saja yang berbeda, berarti refactor mengubah perilaku. Bandingkan lagi dengan Final Complete Controller di atas.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Undefined property: App\Http\Controllers\ProductController::$products` | Constructor ditulis tanpa `protected`, sehingga nilainya tidak disimpan ke property | Tulis `protected ProductService $products` di parameter constructor |
+| `Target class [App\Services\ProductService] does not exist.` | Lupa `use App\Services\ProductService;` atau file service salah tempat | Tambahkan import dan cek lokasi file `app/Services/ProductService.php` |
+| `Call to undefined method App\Services\ProductService::...()` | Nama method di controller tidak sama dengan di service | Samakan: `paginate`, `create`, `update`, `delete` |
+| `Too few arguments to function App\Services\ProductService::update()` | Lupa mengirim `$product` | Panggil `$this->products->update($product, $request->validated())` |
+
+## Cek pemahamanmu
+
+- [ ] Siapa yang membuat object `ProductService` dan mengirimnya ke constructor controller?
+- [ ] Kenapa `show()` dan `edit()` tidak perlu memanggil service?
+- [ ] Apa arti `protected` di parameter constructor?
+- [ ] Bagaimana cara memastikan refactor tidak mengubah perilaku aplikasi?

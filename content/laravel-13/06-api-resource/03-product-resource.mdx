@@ -1,0 +1,209 @@
+---
+title: "Eloquent API Resource: ProductResource"
+description: "Membentuk format JSON produk dengan ProductResource, mengembalikan koleksi ber-pagination lengkap dengan data, links, dan meta."
+module: "06-api-resource"
+order: 3
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["api", "eloquent-resources", "json", "pagination"]
+prerequisites: ["06-api-resource/02-api-product-controller"]
+nextStep: "06-api-resource/04-validasi-dan-status-code"
+---
+
+Di pelajaran sebelumnya controller mengembalikan model `Product` apa adanya. Itu praktis, tetapi format JSON-nya ikut berubah setiap kali tabel berubah. Begitu ada kolom baru, kolom itu langsung bocor ke API.
+
+**API Resource** adalah lapisan transformasi: satu class yang menentukan dengan jelas field apa yang dikirim ke klien dan bagaimana bentuknya. Tabel boleh berubah, format API tetap stabil.
+
+## Langkah 1 — Buat ProductResource
+
+```bash
+php artisan make:resource ProductResource
+```
+
+File baru muncul di `app/Http/Resources/ProductResource.php`, sebuah class yang meng-extend `Illuminate\Http\Resources\Json\JsonResource`.
+
+## Langkah 2 — Tentukan field di toArray()
+
+Method `toArray()` mengembalikan array yang akan menjadi JSON. Di dalamnya, `$this` mewakili model `Product`, jadi kamu bisa langsung menulis `$this->name`.
+
+Kita kirim field yang sama dengan tabel di Modul 02: `name`, `description`, `price`, `stock`, ditambah `id` dan waktu dibuat/diubah.
+
+Here's your complete `app/Http/Resources/ProductResource.php`:
+
+```php title="app/Http/Resources/ProductResource.php"
+<?php
+
+namespace App\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+class ProductResource extends JsonResource
+{
+    /**
+     * Transform the resource into an array.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'description' => $this->description,
+            'price' => $this->price,
+            'stock' => $this->stock,
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
+        ];
+    }
+}
+```
+
+## Langkah 3 — Pakai resource di controller
+
+- Satu produk: `new ProductResource($product)`.
+- Banyak produk: `ProductResource::collection(...)`.
+
+Untuk daftar produk, kita oper hasil `paginate(10)` ke `collection()`. Laravel lalu menambahkan informasi pagination secara otomatis.
+
+```php
+public function index(): AnonymousResourceCollection
+{
+    return ProductResource::collection(Product::latest()->paginate(10));
+}
+
+public function show(Product $product): ProductResource
+{
+    return new ProductResource($product);
+}
+```
+
+Lakukan hal yang sama untuk `store()` dan `update()`: bungkus produknya dengan `new ProductResource(...)`.
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/Api/ProductController.php`:
+
+```php title="app/Http/Controllers/Api/ProductController.php"
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Http\Resources\ProductResource;
+use App\Models\Product;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Response;
+
+class ProductController extends Controller
+{
+    public function index(): AnonymousResourceCollection
+    {
+        return ProductResource::collection(Product::latest()->paginate(10));
+    }
+
+    public function store(StoreProductRequest $request): ProductResource
+    {
+        $product = Product::create($request->validated());
+
+        return new ProductResource($product);
+    }
+
+    public function show(Product $product): ProductResource
+    {
+        return new ProductResource($product);
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): ProductResource
+    {
+        $product->update($request->validated());
+
+        return new ProductResource($product);
+    }
+
+    public function destroy(Product $product): Response
+    {
+        $product->delete();
+
+        return response()->noContent();
+    }
+}
+```
+
+## Langkah 4 — Bentuk JSON yang dihasilkan
+
+Satu produk (`GET /api/products/1`) dibungkus dalam key `data`:
+
+```json
+{
+    "data": {
+        "id": 1,
+        "name": "Kopi Susu",
+        "description": "Kopi susu gula aren",
+        "price": "18000.00",
+        "stock": 25,
+        "created_at": "2026-10-05T08:00:00.000000Z",
+        "updated_at": "2026-10-05T08:00:00.000000Z"
+    }
+}
+```
+
+`price` berupa string `"18000.00"` karena cast `decimal:2` di model `Product` dari Modul 02 menjaga dua angka di belakang koma.
+
+Daftar produk (`GET /api/products`) berisi tiga bagian: `data`, `links`, dan `meta`:
+
+```json
+{
+    "data": [
+        { "id": 2, "name": "Teh Tarik", "...": "..." },
+        { "id": 1, "name": "Kopi Susu", "...": "..." }
+    ],
+    "links": {
+        "first": "http://localhost:8000/api/products?page=1",
+        "last": "http://localhost:8000/api/products?page=1",
+        "prev": null,
+        "next": null
+    },
+    "meta": {
+        "current_page": 1,
+        "from": 1,
+        "last_page": 1,
+        "path": "http://localhost:8000/api/products",
+        "per_page": 10,
+        "to": 2,
+        "total": 2
+    }
+}
+```
+
+`links` dan `meta` dipakai klien untuk membuat tombol halaman berikutnya, persis seperti `{{ $products->links() }}` di view Blade.
+
+> **Tips:** key `data` adalah bawaan Laravel. Kalau tidak ingin membungkus satu resource dengan `data`, panggil `JsonResource::withoutWrapping()` di method `boot()` pada `AppServiceProvider`. Respons ber-pagination tetap memakai `data` karena butuh `links` dan `meta`.
+
+## Uji coba
+
+```bash
+curl -H "Accept: application/json" http://localhost:8000/api/products
+curl -H "Accept: application/json" http://localhost:8000/api/products/1
+```
+
+Bandingkan dengan respons di pelajaran sebelumnya: sekarang formatnya rapi, konsisten, dan pagination punya `links` serta `meta` yang jelas.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Class "App\Http\Resources\ProductResource" not found` | Lupa `use` di controller | Tambahkan `use App\Http\Resources\ProductResource;` |
+| Field baru di tabel tidak muncul di API | Memang belum ditulis di `toArray()` | Tambahkan field-nya di `toArray()`; itu tujuan resource |
+| `meta` dan `links` hilang | Mengoper `Product::all()` atau `get()`, bukan `paginate()` | Pakai `paginate(10)` |
+
+## Cek pemahamanmu
+
+- [ ] Apa keuntungan memakai API Resource dibanding mengembalikan model langsung?
+- [ ] Kapan memakai `new ProductResource(...)` dan kapan `ProductResource::collection(...)`?
+- [ ] Kenapa `price` muncul sebagai string?

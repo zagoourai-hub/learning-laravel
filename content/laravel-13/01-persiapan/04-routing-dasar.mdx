@@ -1,0 +1,207 @@
+---
+title: "Routing Dasar & php artisan route:list"
+description: "Tulis route pertamamu di routes/web.php: closure, view Blade, parameter route, named route, lalu periksa semuanya dengan php artisan route:list."
+module: "01-persiapan"
+order: 4
+level: "pemula"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 20
+tags: ["routing", "blade", "artisan"]
+prerequisites: ["01-persiapan/03-struktur-folder"]
+---
+
+Route adalah peta yang menentukan URL mana ditangani oleh kode mana. Di pelajaran ini kamu menulis beberapa route di proyek `laravel13-crud`, menampilkan view Blade pertamamu, lalu memeriksa daftar route dengan Artisan. Ini bekal langsung untuk `Route::resource` di Modul 02.
+
+Pastikan `composer run dev` sedang berjalan, lalu buka `routes/web.php`.
+
+## Langkah 1 — Route paling sederhana
+
+Route paling dasar menerima URI dan sebuah closure yang mengembalikan respons:
+
+```php
+use Illuminate\Support\Facades\Route;
+
+Route::get('/halo', function () {
+    return 'Halo dari Laravel!';
+});
+```
+
+Buka `http://localhost:8000/halo`, dan teks tersebut langsung tampil. Semua file di folder `routes` dimuat otomatis oleh Laravel lewat konfigurasi di `bootstrap/app.php`, jadi tidak ada yang perlu didaftarkan lagi.
+
+## Langkah 2 — Menampilkan view Blade
+
+Mengembalikan teks saja jarang cukup. Biasanya route mengembalikan **view**. Buat file view-nya dengan Artisan:
+
+```bash
+php artisan make:view greeting
+```
+
+Perintah ini membuat `resources/views/greeting.blade.php`. Isi view dengan HTML sederhana. `{{ $name }}` adalah sintaks Blade untuk menampilkan variabel:
+
+```blade
+<html>
+    <body>
+        <h1>Halo, {{ $name }}</h1>
+    </body>
+</html>
+```
+
+Lalu tampilkan view itu dari route lewat helper `view()`. Argumen kedua berisi data; key array menjadi nama variabel di view:
+
+```php
+Route::get('/sapa', function () {
+    return view('greeting', ['name' => 'Rina']);
+});
+```
+
+Kalau view tidak butuh logic apa pun, ada jalan pintas `Route::view`:
+
+```php
+Route::view('/sapa-cepat', 'greeting', ['name' => 'Dika']);
+```
+
+## Langkah 3 — Parameter route
+
+Bagian URL bisa ditangkap sebagai **parameter** dengan kurung kurawal, misalnya `{name}`. Nilainya diteruskan ke closure:
+
+```php
+Route::get('/sapa/{name}', function (string $name) {
+    return view('greeting', ['name' => $name]);
+});
+```
+
+Sekarang `http://localhost:8000/sapa/Budi` menampilkan "Halo, Budi".
+
+Parameter bisa dibuat **opsional** dengan tanda `?` dan nilai default:
+
+```php
+Route::get('/tamu/{name?}', function (?string $name = 'Tamu') {
+    return 'Halo, '.$name;
+});
+```
+
+Kamu juga bisa membatasi format parameter, misalnya hanya angka, dengan `where`:
+
+```php
+Route::get('/produk/{id}', function (string $id) {
+    return 'Produk nomor '.$id;
+})->where('id', '[0-9]+');
+```
+
+`/produk/12` berhasil, sedangkan `/produk/abc` menghasilkan 404.
+
+## Langkah 4 — Named route
+
+Memberi nama pada route membuatmu tidak perlu menulis URL secara manual. Tambahkan method `name`:
+
+```php
+Route::get('/sapa/{name}', function (string $name) {
+    return view('greeting', ['name' => $name]);
+})->name('sapa');
+```
+
+Setelah itu, URL dibuat dengan helper `route()`. Parameter dikirim sebagai argumen kedua:
+
+```php
+$url = route('sapa', ['name' => 'Dika']); // http://localhost:8000/sapa/Dika
+```
+
+Untuk redirect ke named route, ada `to_route('nama-route')`. Pola `route(...)` dan `to_route(...)` ini akan kamu pakai terus di Modul 02, misalnya `route('products.create')` dan `to_route('products.index')`.
+
+> **Tips:** kalau URL route berubah, cukup ubah satu baris di `routes/web.php`. Semua link yang memakai `route('sapa', ...)` ikut ter-update.
+
+## Final Complete Routes
+
+Here's your complete `routes/web.php`:
+
+```php title="routes/web.php"
+<?php
+
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', function () {
+    return view('welcome');
+});
+
+Route::get('/halo', function () {
+    return 'Halo dari Laravel!';
+});
+
+Route::get('/sapa', function () {
+    return view('greeting', ['name' => 'Rina']);
+});
+
+Route::view('/sapa-cepat', 'greeting', ['name' => 'Dika']);
+
+Route::get('/sapa/{name}', function (string $name) {
+    return view('greeting', ['name' => $name]);
+})->name('sapa');
+
+Route::get('/tamu/{name?}', function (?string $name = 'Tamu') {
+    return 'Halo, '.$name;
+});
+
+Route::get('/produk/{id}', function (string $id) {
+    return 'Produk nomor '.$id;
+})->where('id', '[0-9]+');
+```
+
+Here's your complete `resources/views/greeting.blade.php`:
+
+```blade title="resources/views/greeting.blade.php"
+<html>
+    <body>
+        <h1>Halo, {{ $name }}</h1>
+
+        <p>
+            <a href="{{ route('sapa', ['name' => 'Dika']) }}">Sapa Dika</a>
+        </p>
+    </body>
+</html>
+```
+
+## Langkah 5 — Periksa dengan `php artisan route:list`
+
+Buka terminal kedua dan jalankan:
+
+```bash
+php artisan route:list
+```
+
+Artisan menampilkan semua route: method HTTP, URI, nama route, dan tujuannya. Beberapa opsi yang berguna:
+
+```bash
+php artisan route:list --except-vendor   # sembunyikan route dari paket
+php artisan route:list --path=sapa       # filter berdasarkan path
+php artisan route:list -v                # tampilkan middleware
+```
+
+Route bernama `sapa` muncul dengan namanya di kolom kanan. Di Modul 02 kamu akan memakai perintah yang sama untuk melihat 7 route yang dibuat oleh satu baris `Route::resource`.
+
+## Cara menguji
+
+1. `http://localhost:8000/halo` menampilkan "Halo dari Laravel!".
+2. `http://localhost:8000/sapa` dan `/sapa-cepat` menampilkan view Blade.
+3. `http://localhost:8000/sapa/Budi` menampilkan "Halo, Budi"; link "Sapa Dika" mengarah ke `/sapa/Dika`.
+4. `http://localhost:8000/tamu` menampilkan "Halo, Tamu".
+5. `http://localhost:8000/produk/abc` menghasilkan 404.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `View [greeting] not found` | File view belum dibuat atau salah nama | `php artisan make:view greeting`, cek `resources/views/greeting.blade.php` |
+| `Route [sapa] not defined` | Nama route belum ditambahkan | Tambahkan `->name('sapa')`, cek dengan `php artisan route:list` |
+| 404 di `/produk/abc` | Memang dibatasi oleh `where('id', '[0-9]+')` | Pakai angka, misalnya `/produk/12` |
+
+## Cek pemahamanmu
+
+- [ ] Apa beda `Route::get` dengan closure dan `Route::view`?
+- [ ] Bagaimana cara membuat parameter route opsional?
+- [ ] Kenapa named route lebih aman daripada menulis URL manual?
+- [ ] Opsi apa di `route:list` untuk menyembunyikan route dari paket?
+
+## Next Step
+
+Modul 01 selesai. Kamu sudah punya proyek `laravel13-crud` yang berjalan dan paham cara kerja route. **Lanjut ke Modul 02: CRUD Pemula (Full Controller)**, tempat kamu membangun manajemen produk lengkap dari migration sampai view Blade.

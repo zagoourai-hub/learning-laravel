@@ -1,0 +1,261 @@
+---
+title: "Latihan: Refactor CRUD Book ke Service Pattern"
+description: "Latihan mandiri menerapkan seluruh isi Modul 03 pada CRUD Book: membuat BookService, controller tipis, dan tes, lengkap dengan checklist dan kunci jawaban."
+module: "03-service-pattern"
+order: 8
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 45
+tags: ["latihan", "service-pattern", "testing", "crud"]
+---
+
+Saatnya mempraktikkan semuanya sendiri. Di latihan ini kamu menerapkan Service Pattern pada entitas kedua: **Book**. Kerjakan dulu tanpa melihat kunci jawaban; kunci di akhir halaman dipakai untuk mencocokkan hasilmu.
+
+## Langkah 0 — Siapkan CRUD Book (kalau belum ada)
+
+Kalau kamu belum punya CRUD Book, buat dulu dengan pola **persis** seperti Modul 02, hanya ganti `Product` menjadi `Book`. Struktur tabelnya:
+
+| Kolom | Tipe | Keterangan |
+|---|---|---|
+| `id` | `id()` | Primary key |
+| `title` | `string` | Judul buku, wajib |
+| `author` | `string` | Penulis, wajib |
+| `stock` | `unsignedInteger`, default 0 | Jumlah stok |
+| timestamps | `timestamps()` | `created_at`, `updated_at` |
+
+Perintah yang dipakai sama seperti Modul 02:
+
+```bash
+php artisan make:model Book -m
+php artisan make:controller BookController --resource --model=Book --requests
+php artisan migrate
+```
+
+Lalu isi model (`$fillable` untuk `title`, `author`, `stock`), `StoreBookRequest` dan `UpdateBookRequest` (`authorize()` mengembalikan `true`), view `books.*`, dan tambahkan `Route::resource('books', BookController::class);` di `routes/web.php`. Pastikan CRUD Book berjalan dulu sebelum refactor.
+
+## Langkah 1 — Tugas latihan
+
+Kerjakan berurutan, sesuai urutan refactor aman di pelajaran 07:
+
+1. **Tulis tes dulu.** Buat `tests/Feature/BookTest.php` yang menguji index, store (valid dan tidak valid), update, dan destroy. Jalankan `php artisan test` dan pastikan lulus **sebelum** refactor.
+2. **Buat `app/Services/BookService.php`** dengan method `paginate()`, `create()`, `update()`, dan `delete()`. Perilaku harus sama persis dengan controller sebelum refactor.
+3. **Ubah `BookController` menjadi tipis** dengan constructor injection `protected BookService $books`.
+4. **Jalankan tes lagi.** Semua harus tetap lulus tanpa mengubah satu baris pun di file tes.
+5. **Tambahkan tes service** di `tests/Feature/BookServiceTest.php`.
+
+## Petunjuk
+
+- Lihat lagi pemetaan baris controller ke method service di pelajaran 02; polanya identik.
+- Pesan sukses tetap di controller: misalnya "Buku berhasil ditambahkan.", "Buku berhasil diperbarui.", dan "Buku berhasil dihapus."
+- `show()` dan `edit()` tidak perlu memanggil service.
+- Service tidak boleh memakai `request()`, `view()`, atau `redirect()`.
+- Untuk membuat data tes, pakai `Book::create([...])` seperti `buatProduk()` di pelajaran 05.
+
+## Checklist "siap lanjut"
+
+Centang semuanya sebelum melanjutkan ke modul berikutnya:
+
+- [ ] `BookTest` lulus sebelum dan sesudah refactor, tanpa mengubah file tes.
+- [ ] `BookController` tidak lagi memanggil `Book::latest()`, `Book::create()`, `$book->update()`, atau `$book->delete()`.
+- [ ] `BookService` hanya menerima data biasa (array atau model), bukan object request.
+- [ ] Validasi tetap di `StoreBookRequest` dan `UpdateBookRequest`.
+- [ ] Aplikasi berperilaku sama persis dari sisi pengguna: urutan data, pagination, pesan sukses, dan pesan error.
+- [ ] Kamu bisa menjelaskan kenapa `BookService` tidak perlu didaftarkan di service container.
+
+## Kunci jawaban
+
+Cocokkan hasilmu setelah mencoba sendiri.
+
+### Final Complete Service
+
+Here's your complete `app/Services/BookService.php`:
+
+```php title="app/Services/BookService.php"
+<?php
+
+namespace App\Services;
+
+use App\Models\Book;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+
+class BookService
+{
+    public function paginate(): LengthAwarePaginator
+    {
+        return Book::latest()->paginate(10);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function create(array $data): Book
+    {
+        return Book::create($data);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function update(Book $book, array $data): void
+    {
+        $book->update($data);
+    }
+
+    public function delete(Book $book): void
+    {
+        $book->delete();
+    }
+}
+```
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/BookController.php`:
+
+```php title="app/Http/Controllers/BookController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreBookRequest;
+use App\Http\Requests\UpdateBookRequest;
+use App\Models\Book;
+use App\Services\BookService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
+
+class BookController extends Controller
+{
+    public function __construct(
+        protected BookService $books,
+    ) {}
+
+    public function index(): View
+    {
+        $books = $this->books->paginate();
+
+        return view('books.index', compact('books'));
+    }
+
+    public function create(): View
+    {
+        return view('books.create');
+    }
+
+    public function store(StoreBookRequest $request): RedirectResponse
+    {
+        $this->books->create($request->validated());
+
+        return to_route('books.index')
+            ->with('success', 'Buku berhasil ditambahkan.');
+    }
+
+    public function show(Book $book): View
+    {
+        return view('books.show', compact('book'));
+    }
+
+    public function edit(Book $book): View
+    {
+        return view('books.edit', compact('book'));
+    }
+
+    public function update(UpdateBookRequest $request, Book $book): RedirectResponse
+    {
+        $this->books->update($book, $request->validated());
+
+        return to_route('books.index')
+            ->with('success', 'Buku berhasil diperbarui.');
+    }
+
+    public function destroy(Book $book): RedirectResponse
+    {
+        $this->books->delete($book);
+
+        return to_route('books.index')
+            ->with('success', 'Buku berhasil dihapus.');
+    }
+}
+```
+
+### Final Complete Service Test
+
+Here's your complete `tests/Feature/BookServiceTest.php`:
+
+```php title="tests/Feature/BookServiceTest.php"
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Book;
+use App\Services\BookService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class BookServiceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function dataBuku(array $attributes = []): array
+    {
+        return array_merge([
+            'title' => 'Laskar Pelangi',
+            'author' => 'Andrea Hirata',
+            'stock' => 5,
+        ], $attributes);
+    }
+
+    public function test_paginate_mengembalikan_10_buku_per_halaman(): void
+    {
+        foreach (range(1, 12) as $nomor) {
+            Book::create($this->dataBuku(['title' => "Buku {$nomor}"]));
+        }
+
+        $hasil = app(BookService::class)->paginate();
+
+        $this->assertSame(12, $hasil->total());
+        $this->assertSame(10, $hasil->count());
+    }
+
+    public function test_create_menyimpan_buku(): void
+    {
+        $book = app(BookService::class)->create($this->dataBuku());
+
+        $this->assertDatabaseHas('books', ['id' => $book->id, 'title' => 'Laskar Pelangi']);
+    }
+
+    public function test_update_mengubah_buku(): void
+    {
+        $book = Book::create($this->dataBuku());
+
+        app(BookService::class)->update($book, $this->dataBuku(['stock' => 0]));
+
+        $this->assertDatabaseHas('books', ['id' => $book->id, 'stock' => 0]);
+    }
+
+    public function test_delete_menghapus_buku(): void
+    {
+        $book = Book::create($this->dataBuku());
+
+        app(BookService::class)->delete($book);
+
+        $this->assertDatabaseMissing('books', ['id' => $book->id]);
+    }
+}
+```
+
+`BookTest` (feature test lewat HTTP) mengikuti pola `ProductTest` di pelajaran 05: ganti route `products.*` menjadi `books.*`, data produk menjadi data buku, dan teks pesan sukses menjadi versi "Buku".
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `View [books.index] not found` | Folder view belum dibuat atau salah nama | Buat view di `resources/views/books/` |
+| Tes lulus sebelum refactor tapi gagal sesudahnya | Perilaku berubah, misalnya jumlah per halaman atau teks pesan | Samakan service dan controller dengan kode sebelum refactor |
+| `Undefined property: App\Http\Controllers\BookController::$books` | Lupa `protected` di constructor | Tulis `protected BookService $books` |
+| `Add [title] to fillable property...` | `$fillable` model `Book` belum lengkap | Tambahkan `title`, `author`, `stock` ke `$fillable` |
+
+## Penutup Modul 03
+
+Selamat! Kamu sudah memindahkan logic CRUD dari controller ke service tanpa mengubah perilaku aplikasi, menguncinya dengan tes, dan tahu kapan pola ini layak dipakai. Ini fondasi yang sama dengan pola Controller + Service yang dikenal developer NestJS, versi Laravel yang lebih ringkas karena service container meng-resolve class konkret secara otomatis.

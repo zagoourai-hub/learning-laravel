@@ -1,0 +1,315 @@
+---
+title: "Testing CRUD dan ProductService"
+description: "Tulis feature test untuk seluruh alur CRUD Product dan tes untuk ProductService memakai RefreshDatabase, assertion database, dan mock service container, lalu jalankan dengan php artisan test."
+module: "03-service-pattern"
+order: 5
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 25
+tags: ["testing", "phpunit", "feature-test", "service-pattern"]
+nextStep: "03-service-pattern/06-alternatif-action-dto"
+---
+
+Refactor yang baik dibuktikan dengan tes. Di pelajaran ini kita menulis dua file tes: `ProductTest` yang menguji alur CRUD lewat HTTP seperti pengguna sungguhan, dan `ProductServiceTest` yang menguji `ProductService` secara langsung. Kalau suatu hari ada yang mengubah service dan perilakunya berubah, tes inilah yang pertama kali berteriak.
+
+Kode aplikasi (model, controller, service, view) **tidak berubah** di pelajaran ini; kita hanya menambah file di folder `tests/`.
+
+## Langkah 1 — Pahami jenis tes di Laravel
+
+Menurut dokumentasi Laravel, folder `tests` berisi dua jenis tes:
+
+- **Feature test** (`tests/Feature`) menguji bagian kode yang lebih besar, termasuk request HTTP, dan menjalankan aplikasi Laravel secara penuh. Dokumentasi menyarankan sebagian besar tesmu berupa feature test.
+- **Unit test** (`tests/Unit`) menguji potongan kode yang terisolasi **tanpa** menjalankan aplikasi Laravel, sehingga tidak bisa memakai database.
+
+`ProductService` bekerja dengan database, jadi tesnya kita taruh di `tests/Feature` juga, walaupun yang diuji adalah satu class.
+
+Laravel mendukung Pest dan PHPUnit. Contoh di pelajaran ini memakai gaya PHPUnit (class dengan method `test_...`), sesuai contoh di dokumentasi.
+
+## Langkah 2 — Pastikan tes memakai database terpisah
+
+Kita akan memakai trait `RefreshDatabase`, yang mereset database untuk setiap tes. Itu berarti **tes tidak boleh memakai database development-mu**, atau data produk yang sudah kamu input bisa hilang.
+
+Saat tes berjalan, Laravel otomatis memakai environment `testing`. Nilai environment khusus tes bisa diatur di `phpunit.xml` atau di file `.env.testing`. Buka `phpunit.xml` di root proyek dan pastikan bagian `<php>` berisi koneksi SQLite in-memory seperti ini (tambahkan kalau belum ada atau masih dalam komentar):
+
+```html
+<env name="DB_CONNECTION" value="sqlite"/>
+<env name="DB_DATABASE" value=":memory:"/>
+```
+
+Dengan `:memory:`, database tes dibuat di memori setiap kali tes jalan dan hilang setelahnya.
+
+## Langkah 3 — Buat file tes
+
+```bash
+php artisan make:test ProductTest
+php artisan make:test ProductServiceTest
+```
+
+Tanpa opsi `--unit`, keduanya dibuat di folder `tests/Feature`.
+
+## Langkah 4 — Feature test untuk alur CRUD
+
+Beberapa alat yang kita pakai, semuanya dari dokumentasi Laravel:
+
+- `use RefreshDatabase;` mereset database untuk setiap tes, supaya data antar-tes tidak saling mengganggu.
+- `$this->get()`, `$this->post()`, `$this->put()`, `$this->delete()` mensimulasikan request ke aplikasi tanpa jaringan sungguhan. Middleware CSRF otomatis dimatikan saat tes, jadi tidak perlu token `@csrf`.
+- `assertRedirect`, `assertSessionHas`, `assertSessionHasErrors`, `assertSee` memeriksa response.
+- `assertDatabaseHas`, `assertDatabaseMissing`, `assertDatabaseCount` memeriksa isi tabel.
+
+Kita membuat data tes dengan `Product::create(...)` lewat method bantu `buatProduk()`, jadi model `Product` tidak perlu diubah.
+
+Contoh satu tes, untuk `store()`:
+
+```php
+public function test_store_menyimpan_produk_baru(): void
+{
+    $response = $this->post(route('products.store'), [
+        'name' => 'Kopi Susu',
+        'description' => 'Kopi dengan susu segar',
+        'price' => 18000,
+        'stock' => 25,
+    ]);
+
+    $response->assertRedirect(route('products.index'));
+    $response->assertSessionHas('success', 'Produk berhasil ditambahkan.');
+    $this->assertDatabaseHas('products', ['name' => 'Kopi Susu', 'stock' => 25]);
+}
+```
+
+Tes ini memeriksa tiga hal sekaligus: redirect ke daftar produk, pesan sukses yang **sama persis** dengan teks di controller, dan baris baru di tabel `products`.
+
+### Bonus: mengganti service dengan mock
+
+Inilah salah satu keuntungan constructor injection. Karena controller mendapatkan `ProductService` dari service container, tes bisa menukarnya dengan *mock*. Dokumentasi Laravel menyediakan method `$this->mock()` untuk mendaftarkan mock ke container:
+
+```php
+public function test_destroy_mendelegasikan_ke_service(): void
+{
+    $product = $this->buatProduk();
+
+    $this->mock(ProductService::class, function (MockInterface $mock) {
+        $mock->expects('delete');
+    });
+
+    $response = $this->delete(route('products.destroy', $product));
+
+    $response->assertRedirect(route('products.index'));
+}
+```
+
+Tes ini lulus hanya kalau controller benar-benar memanggil `delete()` milik service. Kalau seseorang mengembalikan `$product->delete()` ke dalam controller, tes ini gagal.
+
+### Final Complete Feature Test
+
+Here's your complete `tests/Feature/ProductTest.php`:
+
+```php title="tests/Feature/ProductTest.php"
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Product;
+use App\Services\ProductService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery\MockInterface;
+use Tests\TestCase;
+
+class ProductTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function buatProduk(array $attributes = []): Product
+    {
+        return Product::create(array_merge([
+            'name' => 'Teh Manis',
+            'description' => 'Teh dengan gula aren',
+            'price' => 8000,
+            'stock' => 10,
+        ], $attributes));
+    }
+
+    public function test_index_menampilkan_produk(): void
+    {
+        $product = $this->buatProduk();
+
+        $response = $this->get(route('products.index'));
+
+        $response->assertOk();
+        $response->assertSee($product->name);
+    }
+
+    public function test_store_menyimpan_produk_baru(): void
+    {
+        $response = $this->post(route('products.store'), [
+            'name' => 'Kopi Susu',
+            'description' => 'Kopi dengan susu segar',
+            'price' => 18000,
+            'stock' => 25,
+        ]);
+
+        $response->assertRedirect(route('products.index'));
+        $response->assertSessionHas('success', 'Produk berhasil ditambahkan.');
+        $this->assertDatabaseHas('products', ['name' => 'Kopi Susu', 'stock' => 25]);
+    }
+
+    public function test_store_menolak_data_tidak_valid(): void
+    {
+        $response = $this->post(route('products.store'), [
+            'name' => '',
+            'price' => -1,
+            'stock' => 'abc',
+        ]);
+
+        $response->assertSessionHasErrors(['name', 'price', 'stock']);
+        $this->assertDatabaseCount('products', 0);
+    }
+
+    public function test_update_mengubah_produk(): void
+    {
+        $product = $this->buatProduk();
+
+        $response = $this->put(route('products.update', $product), [
+            'name' => 'Teh Tawar',
+            'description' => null,
+            'price' => 5000,
+            'stock' => 3,
+        ]);
+
+        $response->assertRedirect(route('products.index'));
+        $response->assertSessionHas('success', 'Produk berhasil diperbarui.');
+        $this->assertDatabaseHas('products', ['id' => $product->id, 'name' => 'Teh Tawar', 'stock' => 3]);
+    }
+
+    public function test_destroy_menghapus_produk(): void
+    {
+        $product = $this->buatProduk();
+
+        $response = $this->delete(route('products.destroy', $product));
+
+        $response->assertRedirect(route('products.index'));
+        $response->assertSessionHas('success', 'Produk berhasil dihapus.');
+        $this->assertDatabaseMissing('products', ['id' => $product->id]);
+    }
+
+    public function test_destroy_mendelegasikan_ke_service(): void
+    {
+        $product = $this->buatProduk();
+
+        $this->mock(ProductService::class, function (MockInterface $mock) {
+            $mock->expects('delete');
+        });
+
+        $response = $this->delete(route('products.destroy', $product));
+
+        $response->assertRedirect(route('products.index'));
+    }
+}
+```
+
+## Langkah 5 — Tes untuk ProductService
+
+Di sini kita memanggil service langsung, tanpa route dan tanpa view. Object service diminta dari container dengan `app(ProductService::class)`, persis seperti yang dilakukan Laravel saat membuat controller.
+
+Untuk `paginate()`, kita buat 12 produk lalu memeriksa dua hal yang memang dijanjikan service: `total()` berisi jumlah semua data, dan `count()` (jumlah data di halaman ini) tepat 10.
+
+### Final Complete Service Test
+
+Here's your complete `tests/Feature/ProductServiceTest.php`:
+
+```php title="tests/Feature/ProductServiceTest.php"
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Product;
+use App\Services\ProductService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class ProductServiceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function dataProduk(array $attributes = []): array
+    {
+        return array_merge([
+            'name' => 'Roti Bakar',
+            'description' => 'Roti bakar cokelat keju',
+            'price' => 15000,
+            'stock' => 7,
+        ], $attributes);
+    }
+
+    public function test_paginate_mengembalikan_10_produk_per_halaman(): void
+    {
+        foreach (range(1, 12) as $nomor) {
+            Product::create($this->dataProduk(['name' => "Produk {$nomor}"]));
+        }
+
+        $hasil = app(ProductService::class)->paginate();
+
+        $this->assertSame(12, $hasil->total());
+        $this->assertSame(10, $hasil->count());
+    }
+
+    public function test_create_menyimpan_produk(): void
+    {
+        $product = app(ProductService::class)->create($this->dataProduk());
+
+        $this->assertDatabaseHas('products', ['id' => $product->id, 'name' => 'Roti Bakar']);
+    }
+
+    public function test_update_mengubah_produk(): void
+    {
+        $product = Product::create($this->dataProduk());
+
+        app(ProductService::class)->update($product, $this->dataProduk(['stock' => 0]));
+
+        $this->assertDatabaseHas('products', ['id' => $product->id, 'stock' => 0]);
+    }
+
+    public function test_delete_menghapus_produk(): void
+    {
+        $product = Product::create($this->dataProduk());
+
+        app(ProductService::class)->delete($product);
+
+        $this->assertDatabaseMissing('products', ['id' => $product->id]);
+    }
+}
+```
+
+## Langkah 6 — Jalankan tes
+
+```bash
+php artisan test
+```
+
+Menurut dokumentasi Laravel, `php artisan test` menampilkan laporan yang lebih rinci dan menerima argumen yang sama dengan `pest` atau `phpunit`. Untuk menjalankan satu file saja atau berhenti di kegagalan pertama:
+
+```bash
+php artisan test tests/Feature/ProductServiceTest.php
+php artisan test --testsuite=Feature --stop-on-failure
+```
+
+Semua tes harus lulus. Coba sengaja rusak sesuatu, misalnya ubah `paginate(10)` menjadi `paginate(5)` di `ProductService`, lalu jalankan lagi: tes `paginate` akan gagal. Kembalikan ke `10` setelahnya.
+
+> **Tips:** Laravel juga punya *model factory* (`php artisan make:factory`) untuk membuat data tes dengan cepat. Factory membutuhkan trait `HasFactory` di model; di sini kita memakai `Product::create()` supaya model dari Modul 02 tetap tidak berubah.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Data produk di aplikasi hilang setelah menjalankan tes | Tes memakai database development | Atur `DB_CONNECTION` dan `DB_DATABASE` di `phpunit.xml` seperti Langkah 2 |
+| `no such table: products` | Database tes belum dimigrasi | Pastikan kelas tes memakai `use RefreshDatabase;` |
+| `Session is missing expected key [success]` | Teks key atau pesan berbeda dengan controller | Samakan dengan controller: key `success` dan teks pesan persis |
+| `Class "Tests\Feature\ProductService" not found` | Lupa import | Tambahkan `use App\Services\ProductService;` |
+| Tes mock gagal dengan pesan bahwa `delete` tidak dipanggil | Controller tidak memakai service untuk menghapus | Pastikan `destroy()` memanggil `$this->products->delete($product)` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa tes `ProductService` ditaruh di `tests/Feature`, bukan `tests/Unit`?
+- [ ] Apa fungsi `RefreshDatabase`, dan kenapa database tes harus terpisah?
+- [ ] Apa yang dibuktikan tes `test_destroy_mendelegasikan_ke_service`?
+- [ ] Bagaimana tes bisa menangkap perubahan perilaku setelah refactor?

@@ -1,0 +1,103 @@
+---
+title: "Persiapan Produksi: Server, .env, dan Debug Mode"
+description: "Siapkan aplikasi CRUD Product untuk produksi: cek syarat server Laravel 13, atur APP_ENV, APP_DEBUG, dan APP_KEY, lalu kenali health route /up."
+module: "08-deploy"
+order: 1
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["deploy", "env", "konfigurasi", "produksi"]
+prerequisites: ["02-crud-pemula/01-crud-full-controller"]
+nextStep: "08-deploy/02-optimasi"
+---
+
+Aplikasi CRUD Product dari Modul 02 (proyek `laravel13-crud`) sudah jalan di laptopmu. Sebelum dipasang di server sungguhan, ada beberapa hal yang **wajib** berbeda antara lingkungan lokal dan produksi. Di pelajaran ini kamu memastikan server memenuhi syarat Laravel 13 dan mengatur file `.env` untuk produksi.
+
+## Langkah 1 — Cek syarat server
+
+Menurut dokumentasi resmi, Laravel 13.x membutuhkan server dengan **PHP 8.3 atau lebih baru**, plus ekstensi PHP berikut aktif:
+
+| Ekstensi | Ekstensi | Ekstensi |
+|---|---|---|
+| Ctype | Hash | PDO |
+| cURL | Mbstring | Session |
+| DOM | OpenSSL | Tokenizer |
+| Fileinfo | PCRE | XML |
+| Filter | | |
+
+Cek versi PHP dan daftar ekstensi di server:
+
+```bash
+php -v
+php -m
+```
+
+> **Tips:** kalau kamu memakai MySQL di produksi, ekstensi driver PDO untuk MySQL juga harus tersedia (lihat pelajaran 03).
+
+## Langkah 2 — Jangan commit file `.env`
+
+File `.env` berisi konfigurasi yang berbeda di tiap mesin (password database, kunci aplikasi). Dokumentasi Laravel menegaskan: `.env` **tidak boleh** masuk ke source control, karena berisiko membocorkan kredensial. Proyek Laravel baru sudah mengabaikan `.env` lewat `.gitignore`, dan menyediakan `.env.example` sebagai templat.
+
+Di server, buat `.env` dari templat itu:
+
+```bash
+cp .env.example .env
+```
+
+## Langkah 3 — Atur `APP_ENV` dan `APP_DEBUG`
+
+`APP_ENV` menentukan lingkungan aplikasi yang sedang berjalan. Untuk produksi, isi dengan `production`.
+
+`APP_DEBUG` mengatur seberapa banyak detail error yang ditampilkan ke pengunjung. Di lokal nilainya `true` supaya kamu melihat pesan error lengkap. **Di produksi wajib `false`**: kalau tidak, pengunjung bisa melihat detail konfigurasi yang sensitif saat terjadi error.
+
+```ini title=".env (bagian aplikasi)"
+APP_NAME="Laravel 13 CRUD"
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://example.com
+```
+
+> **Penting:** ganti `https://example.com` dengan domain aplikasimu.
+
+## Langkah 4 — Buat `APP_KEY`
+
+`APP_KEY` dipakai Laravel untuk enkripsi (misalnya cookie dan session). Kunci ini dibuat dengan perintah berikut, yang memakai generator byte acak PHP yang aman:
+
+```bash
+php artisan key:generate
+```
+
+Perintah ini mengisi `APP_KEY` di `.env` secara otomatis. Jalankan **sekali** saat setup server pertama kali; jangan diulang di setiap deploy, karena data yang sudah terenkripsi dengan kunci lama tidak bisa dibaca lagi.
+
+## Langkah 5 — Kenali health route `/up`
+
+Laravel 13 menyediakan route bawaan untuk pengecekan kesehatan aplikasi, didaftarkan di `bootstrap/app.php`. Uptime monitor atau load balancer bisa memanggil `/up` untuk memastikan aplikasimu hidup.
+
+```php title="bootstrap/app.php (bagian withRouting)"
+->withRouting(
+    web: __DIR__.'/../routes/web.php',
+    commands: __DIR__.'/../routes/console.php',
+    health: '/up',
+)
+```
+
+Kalau ingin URI lain, ganti nilai `health`, misalnya menjadi `'/status'`.
+
+Setelah deploy nanti, buka `https://domainmu/up`. Halaman yang tampil normal berarti aplikasi berhasil di-boot.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Error PHP soal versi atau sintaks saat `composer install` | PHP di server lebih lama dari 8.3 | Upgrade PHP server ke 8.3+ |
+| `could not find driver` | Ekstensi PDO untuk database belum aktif | Aktifkan ekstensi PDO yang sesuai |
+| Pesan error lengkap tampil ke pengunjung | `APP_DEBUG=true` di produksi | Ubah menjadi `APP_DEBUG=false` |
+| Error enkripsi / `No application encryption key has been specified` | `APP_KEY` kosong | Jalankan `php artisan key:generate` |
+
+## Cek pemahamanmu
+
+- [ ] Versi PHP minimum apa yang dibutuhkan Laravel 13?
+- [ ] Kenapa `.env` tidak boleh di-commit?
+- [ ] Apa risikonya kalau `APP_DEBUG=true` di produksi?
+- [ ] Kenapa `php artisan key:generate` tidak dijalankan di setiap deploy?

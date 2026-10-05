@@ -1,0 +1,100 @@
+---
+title: "Optimasi: Cache Konfigurasi, Route, View, dan Build Vite"
+description: "Percepat laravel13-crud di produksi dengan php artisan optimize, pahami tiap cache yang dibuatnya, dan build asset Tailwind dengan npm run build."
+module: "08-deploy"
+order: 2
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["deploy", "optimize", "cache", "vite"]
+nextStep: "08-deploy/03-database-produksi"
+---
+
+Di lokal, Laravel membaca file konfigurasi, mendaftarkan route, dan meng-compile view Blade setiap kali ada request. Itu nyaman saat development karena perubahan langsung terlihat, tapi boros di produksi. Di pelajaran ini kamu menyimpan semua itu dalam cache, lalu mem-build asset Vite untuk produksi.
+
+## Langkah 1 — Satu perintah untuk semua cache
+
+Dokumentasi Laravel menyarankan menjalankan perintah ini saat deploy:
+
+```bash
+php artisan optimize
+```
+
+`optimize` membuat cache untuk **konfigurasi, event, route, dan view** sekaligus. Kalau perlu menghapus semua cache tersebut:
+
+```bash
+php artisan optimize:clear
+```
+
+## Langkah 2 — Pahami tiap cache
+
+`optimize` sebenarnya menjalankan beberapa perintah cache. Kamu juga bisa menjalankannya satu per satu:
+
+```bash
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+php artisan event:cache
+```
+
+| Perintah | Yang dilakukan |
+|---|---|
+| `config:cache` | Menggabungkan semua file konfigurasi menjadi satu file cache, sehingga lebih sedikit akses ke filesystem. |
+| `route:cache` | Menyusun semua pendaftaran route menjadi satu file cache. |
+| `view:cache` | Meng-compile semua view Blade di awal, jadi tidak di-compile saat request datang. |
+| `event:cache` | Menyimpan pemetaan event ke listener yang ditemukan otomatis. |
+
+> **Jebakan umum:** setelah `config:cache` dijalankan, file `.env` **tidak dibaca lagi** dan pemanggilan `env()` di luar folder `config/` mengembalikan `null`. Jadi panggil `env()` hanya di dalam file konfigurasi, lalu pakai `config()` di controller atau view. Kode CRUD Product dari Modul 02 tidak memanggil `env()` langsung, jadi aman.
+
+## Langkah 3 — Kapan cache harus diperbarui
+
+Cache dibuat dari kode pada saat perintah dijalankan. Kalau kamu mengubah route di `routes/web.php` (misalnya menambah route selain `Route::resource('products', ProductController::class)`), mengubah `.env`, atau mengubah view, jalankan lagi `php artisan optimize` saat deploy berikutnya. Untuk route saja, cache bisa dihapus dengan:
+
+```bash
+php artisan route:clear
+```
+
+> **Tips:** jangan jalankan `optimize` di laptop saat development. Perubahan kodemu tidak akan langsung terlihat sampai cache dihapus.
+
+## Langkah 4 — Build asset Vite untuk produksi
+
+Layout `resources/views/layouts/app.blade.php` dari Modul 02 memuat CSS dan JavaScript lewat Vite:
+
+```blade
+@vite(['resources/css/app.css', 'resources/js/app.js'])
+```
+
+Saat development kamu menjalankan Vite lewat `composer run dev` (atau `npm run dev`). Di produksi tidak ada dev server, jadi asset harus di-build dulu:
+
+```bash
+npm run build
+```
+
+Perintah ini mem-bundle dan memberi versi pada asset (termasuk Tailwind dan SweetAlert2 kalau kamu memasangnya di bonus Modul 02), lalu membuat file manifest yang dibaca `@vite` untuk menemukan file hasil build.
+
+> **Penting:** kalau `npm run build` lupa dijalankan, halaman produk akan error dengan pesan `Unable to locate file in Vite manifest`.
+
+## Urutan yang disarankan
+
+Saat deploy, jalankan dari folder proyek di server:
+
+```bash
+npm run build
+php artisan optimize
+```
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Unable to locate file in Vite manifest` | Asset belum di-build | Jalankan `npm run build` |
+| Perubahan `.env` tidak berpengaruh | Konfigurasi masih di-cache | Jalankan lagi `php artisan config:cache` atau `php artisan optimize` |
+| `env('...')` bernilai `null` di produksi | `env()` dipanggil di luar folder `config/` setelah `config:cache` | Pindahkan ke file config, akses dengan `config()` |
+| Route baru tidak dikenali (404) | Route masih di-cache | `php artisan route:clear` lalu `php artisan optimize` |
+
+## Cek pemahamanmu
+
+- [ ] Empat cache apa yang dibuat `php artisan optimize`?
+- [ ] Kenapa `env()` sebaiknya hanya dipanggil di file konfigurasi?
+- [ ] Apa beda `npm run dev` dan `npm run build`?

@@ -1,0 +1,160 @@
+---
+title: "Alternatif: Action Class dan DTO"
+description: "Kenali Action class dan DTO sebagai alternatif atau pelengkap Service Pattern, cara memakainya dengan method injection Laravel, dan trade-off masing-masing."
+module: "03-service-pattern"
+order: 6
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 15
+tags: ["action", "dto", "arsitektur", "dependency-injection"]
+nextStep: "03-service-pattern/07-kapan-perlu-service"
+---
+
+Service bukan satu-satunya cara merapikan controller. Di komunitas Laravel ada dua pola lain yang sering kamu temui di proyek orang: **Action class** dan **DTO** (*Data Transfer Object*). Pelajaran ini mengenalkan keduanya supaya kamu bisa membaca kode seperti itu dan menilai kapan layak dipakai.
+
+> **Penting:** Action class dan DTO adalah **pola dari komunitas**, bukan fitur bawaan Laravel. Tidak ada perintah Artisan atau folder resmi untuk keduanya. Yang disediakan Laravel adalah service container yang bisa meng-inject class apa pun, dan itulah yang membuat pola-pola ini mudah dipakai. Kode di pelajaran ini adalah contoh; proyek utama kita tetap memakai `ProductService` dari pelajaran 03.
+
+## Langkah 1 — Action class: satu class untuk satu aksi
+
+Kalau service mengumpulkan semua operasi Product dalam satu class, Action class memecahnya: **satu class untuk satu aksi**, misalnya `CreateProduct`, `UpdateProduct`, `DeleteProduct`. Biasanya class ini punya satu method publik, sering dinamai `handle()` atau `execute()` (namanya konvensi, bukan aturan Laravel).
+
+Here's your complete `app/Actions/CreateProduct.php`:
+
+```php title="app/Actions/CreateProduct.php"
+<?php
+
+namespace App\Actions;
+
+use App\Models\Product;
+
+class CreateProduct
+{
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function handle(array $data): Product
+    {
+        return Product::create($data);
+    }
+}
+```
+
+### Memakai Action dengan method injection
+
+Dokumentasi Laravel menjelaskan bahwa selain lewat constructor, dependency juga bisa ditulis langsung di parameter method controller (*method injection*). Ini cocok untuk Action, karena setiap method biasanya hanya butuh satu aksi:
+
+```php
+public function store(StoreProductRequest $request, CreateProduct $createProduct): RedirectResponse
+{
+    $createProduct->handle($request->validated());
+
+    return to_route('products.index')
+        ->with('success', 'Produk berhasil ditambahkan.');
+}
+```
+
+Kalau method juga menerima parameter route, misalnya `Product $product` di `update()`, tulis parameter route **setelah** dependency lain, sesuai aturan di dokumentasi Laravel:
+
+```php
+public function update(UpdateProductRequest $request, UpdateProduct $updateProduct, Product $product): RedirectResponse
+```
+
+## Langkah 2 — DTO: data dengan tipe yang jelas
+
+Sejauh ini service menerima `array $data`. Array itu fleksibel, tapi tidak memberi tahu editor atau pembaca kunci apa saja yang ada di dalamnya. DTO menggantinya dengan object yang propertinya bertipe jelas.
+
+Contoh `ProductData` memakai fitur PHP `readonly class` (PHP 8.2 ke atas; Laravel 13 sendiri membutuhkan PHP 8.3 atau lebih baru):
+
+Here's your complete `app/Data/ProductData.php`:
+
+```php title="app/Data/ProductData.php"
+<?php
+
+namespace App\Data;
+
+readonly class ProductData
+{
+    public function __construct(
+        public string $name,
+        public ?string $description,
+        public string $price,
+        public int $stock,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    public static function fromArray(array $validated): self
+    {
+        return new self(
+            name: $validated['name'],
+            description: $validated['description'] ?? null,
+            price: (string) $validated['price'],
+            stock: (int) $validated['stock'],
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return [
+            'name' => $this->name,
+            'description' => $this->description,
+            'price' => $this->price,
+            'stock' => $this->stock,
+        ];
+    }
+}
+```
+
+`price` disimpan sebagai string supaya angka desimal seperti `18000.50` tidak berubah karena pembulatan float; kolomnya sendiri `decimal(12, 2)` dan model sudah meng-cast-nya ke `decimal:2`.
+
+Pemakaiannya: controller mengubah data tervalidasi menjadi DTO, lalu service menerima DTO itu.
+
+```php
+// di ProductController::store()
+$this->products->create(ProductData::fromArray($request->validated()));
+
+// di ProductService
+public function create(ProductData $data): Product
+{
+    return Product::create($data->toArray());
+}
+```
+
+## Langkah 3 — Bandingkan trade-off-nya
+
+| Pola | Kelebihan | Kekurangan | Cocok untuk |
+|---|---|---|---|
+| **Service** (`ProductService`) | Satu tempat untuk semua operasi satu entitas; mudah ditemukan | Bisa membengkak kalau operasinya puluhan | Sebagian besar aplikasi CRUD |
+| **Action** (`CreateProduct`) | Class kecil dan fokus; mudah diuji; mudah dipakai ulang dari controller, command, atau job | Jumlah file bertambah cepat; logic satu entitas tersebar | Aksi yang kompleks atau dipakai di banyak tempat |
+| **DTO** (`ProductData`) | Tipe data jelas; editor bisa melengkapi otomatis; salah ketik kunci ketahuan lebih awal | Menambah kode konversi (`fromArray`, `toArray`) | Data yang dioper melewati banyak lapisan |
+
+Ketiganya bisa digabung. Misalnya service menerima DTO, atau Action dipanggil dari service. Tapi setiap lapisan tambahan adalah kode yang harus dirawat.
+
+## Langkah 4 — Rekomendasi untuk proyek kita
+
+Untuk CRUD Product, `ProductService` dengan `array $data` sudah cukup: empat method pendek, validasi sudah dijaga Form Request, dan tes sudah mengunci perilakunya. Action dan DTO baru layak dipertimbangkan kalau:
+
+- satu aksi (misalnya "checkout") melibatkan banyak langkah dan dipanggil dari beberapa tempat, atau
+- data yang sama dioper ke banyak class dan sering terjadi salah nama kunci array.
+
+Pelajaran berikutnya membahas pertanyaan yang sama untuk service itu sendiri: kapan sebenarnya perlu.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Target class [App\Actions\CreateProduct] does not exist.` | Nama file, class, atau namespace tidak cocok | File `app/Actions/CreateProduct.php` harus berisi `namespace App\Actions;` dan `class CreateProduct` |
+| `update()` error atau menerima nilai yang salah setelah menambah Action | Parameter route ditulis sebelum dependency yang di-inject | Ikuti aturan dokumentasi: taruh `Product $product` di urutan terakhir |
+| `Cannot modify readonly property App\Data\ProductData::$name` | Mengubah properti DTO setelah dibuat | Buat object baru; properti `readonly` memang tidak bisa diubah |
+
+## Cek pemahamanmu
+
+- [ ] Apa beda Action class dan service?
+- [ ] Apakah Action class dan DTO fitur bawaan Laravel? Fitur Laravel apa yang membuatnya mudah dipakai?
+- [ ] Kenapa parameter route ditulis setelah dependency yang di-inject lewat method?
+- [ ] Kapan DTO lebih menguntungkan daripada `array $data`?

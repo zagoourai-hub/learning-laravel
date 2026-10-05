@@ -1,0 +1,222 @@
+---
+title: "Autentikasi Token dengan Sanctum dan Uji Lengkap dengan curl"
+description: "Membuat endpoint token Sanctum, mengunci route tambah/ubah/hapus produk dengan auth:sanctum, dan menguji seluruh alur API memakai curl."
+module: "06-api-resource"
+order: 5
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 25
+tags: ["api", "sanctum", "authentication", "token", "curl"]
+prerequisites: ["06-api-resource/04-validasi-dan-status-code"]
+---
+
+Sekarang siapa pun bisa menambah atau menghapus produk lewat API. Di pelajaran ini kita membagi aksesnya:
+
+- **Membaca** produk (`index`, `show`) tetap terbuka untuk umum.
+- **Menambah, mengubah, menghapus** produk wajib membawa **token**.
+
+Token dibuat dengan **Laravel Sanctum**, yang sudah terpasang saat kamu menjalankan `php artisan install:api` di pelajaran 01. Klien mengirim token di header `Authorization: Bearer ...` pada setiap request.
+
+## Langkah 1 — Tambahkan HasApiTokens ke model User
+
+Agar user bisa membuat token, model `User` perlu trait `Laravel\Sanctum\HasApiTokens`. Buka `app/Models/User.php` dan tambahkan dua hal:
+
+```php
+use Laravel\Sanctum\HasApiTokens;
+
+class User extends Authenticatable
+{
+    use HasApiTokens, HasFactory, Notifiable;
+
+    // ... isi lain biarkan seperti semula
+}
+```
+
+1. Baris `use Laravel\Sanctum\HasApiTokens;` di bagian atas file, bersama `use` lainnya.
+2. `HasApiTokens` di dalam baris `use ...;` milik class.
+
+> **Penting:** cukup tambahkan trait-nya. Jangan menghapus trait lain yang sudah ada di model `User` bawaan proyekmu.
+
+## Langkah 2 — Buat endpoint untuk meminta token
+
+Klien (misalnya aplikasi mobile) mengirim email, password, dan nama perangkat. Kalau cocok, server mengembalikan token. Kode ini mengikuti contoh resmi dokumentasi Sanctum:
+
+```php
+Route::post('/sanctum/token', function (Request $request) {
+    $request->validate([
+        'email' => 'required|email',
+        'password' => 'required',
+        'device_name' => 'required',
+    ]);
+
+    $user = User::where('email', $request->email)->first();
+
+    if (! $user || ! Hash::check($request->password, $user->password)) {
+        throw ValidationException::withMessages([
+            'email' => ['The provided credentials are incorrect.'],
+        ]);
+    }
+
+    return $user->createToken($request->device_name)->plainTextToken;
+});
+```
+
+- `createToken()` membuat token baru untuk user, dan `plainTextToken` adalah teks token yang dikirim ke klien.
+- `device_name` hanya informasi, supaya user bisa mengenali perangkat mana yang memegang token.
+- Kalau email atau password salah, respons berupa error validasi 422 untuk field `email`.
+
+## Langkah 3 — Kunci route tulis dengan auth:sanctum
+
+Kita pecah `apiResource` menjadi dua bagian dengan `only()` dan `except()`:
+
+```php
+Route::name('api.')->group(function () {
+    Route::apiResource('products', ProductController::class)->only(['index', 'show']);
+
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::apiResource('products', ProductController::class)->except(['index', 'show']);
+    });
+});
+```
+
+Middleware `auth:sanctum` menolak request tanpa token yang valid dengan respons **401** `Unauthenticated.`.
+
+## Langkah 4 — Final Complete File
+
+Here's your complete `routes/api.php`:
+
+```php title="routes/api.php"
+<?php
+
+use App\Http\Controllers\Api\ProductController;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\ValidationException;
+
+Route::post('/sanctum/token', function (Request $request) {
+    $request->validate([
+        'email' => 'required|email',
+        'password' => 'required',
+        'device_name' => 'required',
+    ]);
+
+    $user = User::where('email', $request->email)->first();
+
+    if (! $user || ! Hash::check($request->password, $user->password)) {
+        throw ValidationException::withMessages([
+            'email' => ['The provided credentials are incorrect.'],
+        ]);
+    }
+
+    return $user->createToken($request->device_name)->plainTextToken;
+});
+
+Route::get('/user', function (Request $request) {
+    return $request->user();
+})->middleware('auth:sanctum');
+
+Route::name('api.')->group(function () {
+    Route::apiResource('products', ProductController::class)->only(['index', 'show']);
+
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::apiResource('products', ProductController::class)->except(['index', 'show']);
+    });
+});
+```
+
+`Api\ProductController` dan `ProductResource` tidak berubah dari pelajaran 04.
+
+## Langkah 5 — Buat user untuk uji coba
+
+Kita butuh satu user. Cara tercepat lewat Tinker:
+
+```bash
+php artisan tinker
+```
+
+Lalu di dalam Tinker:
+
+```php
+App\Models\User::factory()->create(['email' => 'budi@example.com']);
+```
+
+`UserFactory` bawaan Laravel memberi password `password`. Ketik `exit` untuk keluar dari Tinker.
+
+## Uji lengkap dengan curl
+
+**1. Minta token**
+
+```bash
+curl -X POST http://localhost:8000/api/sanctum/token \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"budi@example.com","password":"password","device_name":"laptop-budi"}'
+```
+
+Respons berupa teks token, misalnya `1|AbCdEf...`. Salin token tersebut.
+
+**2. Coba tambah produk tanpa token** (harus ditolak):
+
+```bash
+curl -i -X POST http://localhost:8000/api/products \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Roti Bakar","price":12000,"stock":5}'
+```
+
+Hasil: `HTTP/1.1 401 Unauthorized` dengan pesan `Unauthenticated.`.
+
+**3. Tambah produk dengan token** (ganti `TOKEN_KAMU`):
+
+```bash
+curl -i -X POST http://localhost:8000/api/products \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer TOKEN_KAMU" \
+  -d '{"name":"Roti Bakar","price":12000,"stock":5}'
+```
+
+Hasil: `HTTP/1.1 201 Created` dan data produk dalam key `data`.
+
+**4. Ubah dan hapus dengan token**
+
+```bash
+curl -X PUT http://localhost:8000/api/products/1 \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer TOKEN_KAMU" \
+  -d '{"name":"Roti Bakar Cokelat","price":14000,"stock":5}'
+
+curl -i -X DELETE http://localhost:8000/api/products/1 \
+  -H "Accept: application/json" \
+  -H "Authorization: Bearer TOKEN_KAMU"
+```
+
+`PUT` memakai `UpdateProductRequest`, jadi semua field wajib dikirim lagi. `DELETE` menjawab `204 No Content`.
+
+**5. Membaca tetap tanpa token**
+
+```bash
+curl -H "Accept: application/json" http://localhost:8000/api/products
+```
+
+> **Tips Windows:** di PowerShell gunakan `curl.exe` dan tulis perintah dalam satu baris, atau ganti `\` di akhir baris dengan backtick.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `Call to undefined method App\Models\User::createToken()` | Trait `HasApiTokens` belum ditambahkan | Tambahkan `use HasApiTokens` di model `User` |
+| 401 `Unauthenticated.` padahal token sudah dikirim | Format header salah | Pastikan `Authorization: Bearer TOKEN` (ada kata `Bearer` dan spasi) |
+| 422 `The provided credentials are incorrect.` | Email/password salah | Cek email user dan password `password` dari factory |
+| Error tabel `personal_access_tokens` | Migration Sanctum belum jalan | `php artisan migrate` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa route `index` dan `show` dibiarkan terbuka, sedangkan `store`, `update`, `destroy` dikunci?
+- [ ] Apa fungsi trait `HasApiTokens`?
+- [ ] Bagaimana klien mengirim token di setiap request?
+- [ ] Status code apa yang muncul kalau token tidak dikirim?

@@ -1,0 +1,140 @@
+---
+title: "Kenapa Controller Gemuk Bermasalah"
+description: "Pahami kapan controller mulai 'gemuk', apa ruginya, dan bagaimana Service Pattern membagi tugas antara controller dan service, lengkap dengan padanannya di NestJS/Express."
+module: "03-service-pattern"
+order: 1
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-05"
+estimatedMinutes: 10
+tags: ["service-pattern", "controller", "arsitektur"]
+prerequisites: ["02-crud-pemula/01-crud-full-controller"]
+nextStep: "03-service-pattern/02-membuat-product-service"
+---
+
+Di Modul 02 kamu sudah membangun CRUD Product dengan semua logic di `ProductController`. Itu sengaja, supaya alurnya mudah diikuti. Di modul ini kita memindahkan logic tersebut ke sebuah **service class**, sehingga controller hanya mengurus urusan HTTP. Pelajaran pertama ini belum menulis kode baru: kita bahas dulu *kenapa* perlu, supaya refactor berikutnya terasa masuk akal, bukan sekadar ikut-ikutan pola.
+
+## Posisi kita sekarang
+
+Ini method `store()` dari akhir Modul 02:
+
+```php
+public function store(StoreProductRequest $request): RedirectResponse
+{
+    Product::create($request->validated());
+
+    return to_route('products.index')
+        ->with('success', 'Produk berhasil ditambahkan.');
+}
+```
+
+Jujur saja: controller ini **belum gemuk**. Setiap method hanya beberapa baris, dan validasinya sudah dipisah ke `StoreProductRequest` dan `UpdateProductRequest`. Untuk aplikasi sekecil ini, full controller masih wajar.
+
+Masalahnya muncul ketika fitur bertambah.
+
+## Saat fitur bertambah
+
+Misalnya kita menambahkan pencarian produk berdasarkan nama di halaman daftar. Kalau semuanya tetap ditaruh di controller, `index()` berubah menjadi seperti ini:
+
+```php
+public function index(Request $request): View
+{
+    $search = $request->string('search')->trim()->toString();
+
+    $products = Product::query()
+        ->when($search, function (Builder $query, string $search) {
+            $query->whereLike('name', "%{$search}%");
+        })
+        ->latest()
+        ->paginate(10)
+        ->withQueryString();
+
+    return view('products.index', compact('products', 'search'));
+}
+```
+
+Tambahkan lagi aturan stok, transaksi database, notifikasi, dan versi API dari endpoint yang sama, maka controller cepat membengkak. Itulah yang disebut **controller gemuk** (*fat controller*).
+
+> **Catatan:** contoh pencarian di atas hanya ilustrasi. Proyek utama di modul ini tetap memakai kode CRUD Modul 02 apa adanya; yang berubah hanya *letak* logic-nya.
+
+## Apa ruginya?
+
+| Masalah | Akibatnya |
+|---|---|
+| Logic terikat ke HTTP | Query pencarian di atas hanya bisa dipakai lewat request web. Artisan command, job antrean, atau controller API harus menyalin ulang kodenya. |
+| Kode terduplikasi | Begitu ada `Api\ProductController`, logic yang sama ditulis dua kali dan lama-lama berbeda sendiri. |
+| Sulit diuji terpisah | Untuk menguji "pencarian berdasarkan nama", kamu harus menembak route dan membaca HTML, padahal yang ingin diuji hanya query-nya. |
+| Sulit dibaca | Satu method mengurus input, aturan bisnis, query, dan response sekaligus. |
+
+## Ide Service Pattern
+
+Service Pattern membagi tugas menjadi dua lapis:
+
+| Lapis | Tanggung jawab |
+|---|---|
+| **Controller** | Urusan HTTP: menerima request, memakai Form Request untuk validasi, memanggil service, lalu mengembalikan view atau redirect. |
+| **Service** (`App\Services\ProductService`) | Logic aplikasi: query, simpan, ubah, hapus, aturan bisnis. Tidak tahu apa-apa soal request atau view. |
+
+Service hanyalah **class PHP biasa**. Laravel tidak mewajibkan folder atau nama tertentu; `app/Services` adalah konvensi yang umum dipakai.
+
+Bagaimana controller mendapatkan service-nya? Lewat **service container** Laravel. Dokumentasi Laravel menyebut fitur ini *zero configuration resolution*: kalau sebuah class tidak punya dependency, atau hanya bergantung pada class konkret lain, container bisa membuatnya otomatis tanpa konfigurasi apa pun. Controller sendiri di-resolve oleh container, sehingga cukup kamu tulis tipe `ProductService` di constructor dan Laravel yang mengisinya. Detailnya di pelajaran 03.
+
+## Padanan untuk developer NestJS/Express
+
+Kalau kamu datang dari NestJS atau Express, polanya akan terasa familier:
+
+| Konsep | NestJS / Express | Laravel 13 |
+|---|---|---|
+| Lapisan HTTP | `@Controller()` (NestJS) atau route handler (Express) | Controller di `app/Http/Controllers` |
+| Validasi input | DTO + `ValidationPipe` (NestJS) atau middleware validasi (Express) | Form Request (`StoreProductRequest`) |
+| Logic aplikasi | Class `@Injectable()` service | Class biasa di `app/Services` |
+| Dependency injection | Daftarkan di `providers` modul, lalu inject lewat constructor | Tulis tipe di constructor; container meng-resolve class konkret otomatis |
+
+Bedanya yang paling terasa: di Laravel kamu **tidak perlu mendaftarkan** service konkret di mana pun. Pendaftaran manual (binding) baru diperlukan kalau kamu ingin meng-inject sebuah *interface*, karena container harus diberi tahu implementasi mana yang dipakai.
+
+## Sebelum dan sesudah
+
+Gambaran akhir yang akan kita capai untuk `store()`:
+
+**Sebelum** (Modul 02, logic di controller):
+
+```php
+public function store(StoreProductRequest $request): RedirectResponse
+{
+    Product::create($request->validated());
+
+    return to_route('products.index')
+        ->with('success', 'Produk berhasil ditambahkan.');
+}
+```
+
+**Sesudah** (controller hanya mendelegasikan ke service):
+
+```php
+public function store(StoreProductRequest $request): RedirectResponse
+{
+    $this->products->create($request->validated());
+
+    return to_route('products.index')
+        ->with('success', 'Produk berhasil ditambahkan.');
+}
+```
+
+Perbedaannya kecil untuk `store()`, dan itu wajar. Manfaat terbesar terasa di `index()` begitu pencarian masuk: query panjangnya pindah ke service dan bisa dipakai ulang serta diuji sendiri.
+
+## Rencana modul ini
+
+1. **Membuat `ProductService`**: memindahkan query dan operasi simpan/ubah/hapus.
+2. **Controller tipis + constructor injection**: controller memakai service lewat service container.
+3. **Memindah logic**: aturan memilah logic, transaksi database, dan ke mana fitur baru (seperti pencarian) sebaiknya ditaruh; validasi tetap di Form Request.
+4. **Testing**: feature test untuk CRUD dan tes untuk service.
+5. **Alternatif**: Action class dan DTO, beserta trade-off-nya.
+6. **Kapan perlu dan kapan tidak**: supaya tidak over-engineering.
+7. **Latihan**: refactor CRUD `Book` sendiri.
+
+## Cek pemahamanmu
+
+- [ ] Kenapa controller Modul 02 sebenarnya belum termasuk gemuk?
+- [ ] Sebutkan dua kerugian kalau query pencarian ditulis langsung di controller.
+- [ ] Apa beda tanggung jawab controller dan service?
+- [ ] Kapan kamu perlu mendaftarkan binding di service container, dan kapan tidak?
