@@ -1,18 +1,8 @@
 import Link from "next/link";
 import { getAllLessons, getModules } from "@/lib/content";
-import { codeToHtml } from "shiki";
-import { HeroCodeCard } from "@/components/ui/hero-code-card";
+import { AnimatedSpan, Terminal, TypingAnimation } from "@/components/ui/terminal";
 import HeroSection from "@/components/ui/hero-section-with-gradient";
 import { ResumeCard } from "@/components/learn/resume-card";
-
-// Excerpt from the Modul 02 lesson (ProductController@store), kept verbatim.
-const SNIPPET = `public function store(StoreProductRequest $request): RedirectResponse
-{
-    Product::create($request->validated());
-
-    return to_route('products.index')
-        ->with('success', 'Produk berhasil ditambahkan.');
-}`;
 
 // Concrete contents per module, from PRD section 12 (curriculum).
 const PATH_CONTENTS: Record<string, string[]> = {
@@ -58,8 +48,7 @@ const FAQ = [
   ],
 ] as const;
 
-export default async function Home() {
-  const snippetHtml = await codeToHtml(SNIPPET, { lang: "php", theme: "github-dark-default" });
+export default function Home() {
   const modules = getModules();
   const lessons = getAllLessons();
   const first = lessons[0];
@@ -69,15 +58,16 @@ export default async function Home() {
     <>
       {/* Hero */}
       <HeroSection startHref={first?.url ?? "/belajar/"} pathHref="#jalur">
-        <HeroCodeCard
-          filename="app/Http/Controllers/ProductController.php"
-          html={snippetHtml}
-          code={SNIPPET}
-          result={{ status: "302", text: "→ /products · Produk berhasil ditambahkan." }}
-        />
+        <Terminal className="!max-w-3xl !max-h-none">
+          <TypingAnimation>php artisan make:model Product -mc --resource</TypingAnimation>
+          <AnimatedSpan>   INFO  Model [app/Models/Product.php] created successfully.</AnimatedSpan>
+          <AnimatedSpan>   INFO  Migration [database/migrations/..._create_products_table.php] created successfully.</AnimatedSpan>
+          <AnimatedSpan>   INFO  Controller [app/Http/Controllers/ProductController.php] created successfully.</AnimatedSpan>
+          <TypingAnimation>php artisan serve</TypingAnimation>
+          <AnimatedSpan>   INFO  Server running on [http://127.0.0.1:8000].</AnimatedSpan>
+        </Terminal>
         <p className="mt-3 text-sm text-muted">
-          Dari Modul 02: <code className="font-mono text-[0.85em]">$request-&gt;validated()</code> hanya berisi data yang
-          lolos validasi <code className="font-mono text-[0.85em]">StoreProductRequest</code>.
+          Dari Modul 02: satu perintah membuat model, migration, dan resource controller sekaligus.
         </p>
       </HeroSection>
 

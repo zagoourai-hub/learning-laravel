@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { gsap } from "gsap";
 import { motion, Variants } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { Meteors } from "@/components/ui/meteors";
 import { cn } from "@/lib/utils";
 
 type HeroProps = {
@@ -40,13 +41,13 @@ export default function HeroSection({ startHref, pathHref, children }: HeroProps
   }, []);
 
   return (
-    <div className="overflow-hidden border-b border-border">
-      <div className="relative mx-auto w-full max-w-7xl px-4 sm:px-6">
+    <div className="relative w-full overflow-hidden border-b border-border">
+      <div className="relative w-full px-4 sm:px-6">
         {/* Gradient only in dark mode; light mode stays plain. */}
         <div
           ref={gradientRef}
           aria-hidden
-          className="absolute inset-0 -z-10 hidden rounded-2xl dark:block"
+          className="absolute inset-0 -z-10 hidden dark:block"
           style={{
             backgroundImage: `
               linear-gradient(180deg, #0f1720 0%, #16202b 40%, #2a1f3d 75%, #3a2147 100%),
@@ -56,6 +57,11 @@ export default function HeroSection({ startHref, pathHref, children }: HeroProps
             backgroundBlendMode: "overlay, screen",
           }}
         />
+
+        {/* Meteor background; hidden for reduced motion */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden motion-reduce:hidden">
+          <Meteors number={24} />
+        </div>
 
         <div className="pt-16 pb-10 text-center sm:pt-20 sm:pb-12">
           <div className="relative mx-auto max-w-3xl">
