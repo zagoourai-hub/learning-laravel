@@ -27,7 +27,7 @@ export function Toc({ toc }: { toc: TocItem[] }) {
 export function TocMobile({ toc }: { toc: TocItem[] }) {
   if (toc.length === 0) return null;
   return (
-    <details className="my-8 rounded-md border border-border bg-surface lg:hidden" data-pagefind-ignore>
+    <details className="my-8 rounded-md border border-border-strong bg-surface lg:hidden" data-pagefind-ignore>
       <summary className="flex min-h-11 cursor-pointer items-center px-4 font-heading text-sm font-semibold">Daftar isi</summary>
       <div className="border-t border-border px-4 py-3">
         <TocList toc={toc} />

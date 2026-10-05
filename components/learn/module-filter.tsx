@@ -21,6 +21,7 @@ export function ModuleFilter({ modules, header, resume }: { modules: GridModule[
   const total = modules.reduce((n, m) => n + m.lessons.length, 0);
   const chips = [{ id: "semua", title: "Semua", count: total }, ...modules.map((m) => ({ id: m.id, title: m.title, count: m.lessons.length }))];
   const visible = selected === "semua" ? modules : modules.filter((m) => m.id === selected);
+  const shown = visible.reduce((n, m) => n + m.lessons.length, 0);
 
   return (
     <div className="relative min-h-screen bg-background">
@@ -28,6 +29,9 @@ export function ModuleFilter({ modules, header, resume }: { modules: GridModule[
       <div className="relative z-10 flex min-h-[250px] flex-col justify-center gap-6 border-b border-border p-6">
         <div className="mx-auto w-full max-w-7xl">{header}</div>
         <div className="mx-auto w-full max-w-7xl">
+          <p className="sr-only" role="status">
+            Menampilkan {shown} pelajaran
+          </p>
           <div role="group" aria-label="Filter modul" className="flex flex-wrap gap-2">
             {chips.map((c) => {
               const on = selected === c.id;
@@ -37,8 +41,8 @@ export function ModuleFilter({ modules, header, resume }: { modules: GridModule[
                   type="button"
                   aria-pressed={on}
                   onClick={() => choose(c.id)}
-                  className={`flex h-10 items-center rounded-lg border px-1 pl-3 text-sm transition-colors sm:h-8 ${
-                    on ? "border-foreground bg-foreground text-background" : "border-border hover:bg-surface-2"
+                  className={`flex h-10 items-center rounded-lg border px-1 pl-3 text-sm transition-colors duration-150 motion-reduce:transition-none sm:h-8 ${
+                    on ? "border-foreground bg-foreground text-background" : "border-border-strong hover:bg-surface-2"
                   }`}
                 >
                   <span>{c.title}</span>

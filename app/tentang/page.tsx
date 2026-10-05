@@ -57,7 +57,7 @@ export default function TentangPage() {
       </div>
 
       <p className="mt-12 text-sm text-muted">
-        <Link href="/belajar/" className="font-semibold text-accent hover:underline">
+        <Link href="/belajar/" className="-my-2 inline-flex items-center py-2 font-semibold text-accent hover:underline">
           ← Kembali ke jalur belajar
         </Link>
       </p>

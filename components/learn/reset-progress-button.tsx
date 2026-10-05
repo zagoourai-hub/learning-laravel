@@ -15,7 +15,7 @@ export function ResetProgressButton() {
             setDone(true);
           }
         }}
-        className="min-h-11 rounded-md border border-border px-4 text-sm font-semibold hover:border-accent hover:text-accent"
+        className="min-h-11 rounded-md border border-border-strong px-4 text-sm font-semibold transition-colors duration-150 hover:border-accent hover:text-accent active:bg-surface-2 motion-reduce:transition-none"
       >
         Reset progres
       </button>

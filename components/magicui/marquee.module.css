@@ -1,0 +1,46 @@
+/* Keyframes for Marquee live here (not in globals.css). */
+
+.root {
+  display: flex;
+  gap: var(--gap);
+  overflow: hidden;
+}
+
+.track {
+  display: flex;
+  flex-shrink: 0;
+  min-width: 100%;
+  gap: var(--gap);
+  justify-content: space-around;
+  animation: marquee var(--duration) linear infinite;
+}
+
+.reverse {
+  animation-direction: reverse;
+}
+
+/* Pause on hover, and while keyboard focus is inside. */
+.root:hover .pause,
+.root:focus-within .pause {
+  animation-play-state: paused;
+}
+
+@keyframes marquee {
+  to {
+    transform: translateX(calc(-100% - var(--gap)));
+  }
+}
+
+/* Reduced motion: static row, scrollable, no duplicate copy. */
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    overflow-x: auto;
+  }
+  .track {
+    animation: none;
+    min-width: 0;
+  }
+  .copy {
+    display: none;
+  }
+}

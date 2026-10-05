@@ -61,18 +61,18 @@ export default async function LessonPage({ params }: PageProps<"/belajar/[module
   const moduleList = moduleLessons.map(({ id, title, url }) => ({ id, title, url }));
 
   return (
-    <div className="relative min-h-screen bg-background">
+    <div className="relative min-h-screen overflow-x-clip bg-background">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <VisitTracker id={lesson.id} />
       <LessonHeader lesson={lesson} />
 
       <div className="relative z-10 mx-auto max-w-7xl px-4 md:px-0">
         <div className="flex divide-x divide-border border-x border-border">
-          <main className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1">
             <div className="p-6 lg:p-10">
               <div className="space-y-4 lg:hidden" data-pagefind-ignore>
                 <TocMobile toc={toc} />
-                <details className="rounded-md border border-border bg-surface">
+                <details className="rounded-md border border-border-strong bg-surface">
                   <summary className="flex min-h-11 cursor-pointer items-center px-4 font-heading text-sm font-semibold">
                     Pelajaran di modul ini
                   </summary>
@@ -102,7 +102,7 @@ export default async function LessonPage({ params }: PageProps<"/belajar/[module
               </div>
             </div>
             <ReadMore lesson={lesson} prev={prev} next={next} siblings={moduleLessons} />
-          </main>
+          </div>
 
           <LessonAside lesson={lesson} module={mod} moduleLessons={moduleList} toc={toc} />
         </div>

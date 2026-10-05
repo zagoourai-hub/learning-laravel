@@ -20,6 +20,7 @@ import {
 } from "motion/react"
 
 import { cn } from "@/lib/utils"
+import { useInstantMotion } from "@/components/ui/use-instant-motion"
 
 interface SequenceContextValue {
   completeItem: (index: number) => void
@@ -77,6 +78,7 @@ export const AnimatedSpan = ({
     once: true,
   })
 
+  const reduce = useInstantMotion()
   const sequence = useSequence()
   const itemIndex = useItemIndex()
   const [hasStarted, setHasStarted] = useState(false)
@@ -89,14 +91,14 @@ export const AnimatedSpan = ({
     }
   }, [sequence, hasStarted, itemIndex])
 
-  const shouldAnimate = sequence ? hasStarted : startOnView ? isInView : true
+  const shouldAnimate = reduce || (sequence ? hasStarted : startOnView ? isInView : true)
 
   return (
     <motion.div
       ref={elementRef}
       initial={{ opacity: 0, y: -5 }}
       animate={shouldAnimate ? { opacity: 1, y: 0 } : { opacity: 0, y: -5 }}
-      transition={{ duration: 0.3, delay: sequence ? 0 : delay / 1000 }}
+      transition={{ duration: reduce ? 0 : 0.3, delay: sequence ? 0 : delay / 1000 }}
       className={cn("grid text-sm font-normal tracking-tight", className)}
       onAnimationComplete={() => {
         if (!sequence) return
@@ -136,6 +138,7 @@ export const TypingAnimation = ({
     Component
   ] as TerminalTypingMotionComponent
 
+  const reduce = useInstantMotion()
   const [displayedText, setDisplayedText] = useState<string>("")
   const [started, setStarted] = useState(false)
   const elementRef = useRef<HTMLElement | null>(null)
@@ -189,7 +192,9 @@ export const TypingAnimation = ({
   useEffect(() => {
     let typingEffect: ReturnType<typeof setInterval> | null = null
 
-    if (started) {
+    if (reduce) {
+      setDisplayedText(children) // reduced motion: show the final text at once
+    } else if (started) {
       let i = 0
       typingEffect = setInterval(() => {
         if (i < children.length) {
@@ -213,7 +218,7 @@ export const TypingAnimation = ({
         clearInterval(typingEffect)
       }
     }
-  }, [children, duration, started])
+  }, [children, duration, started, reduce])
 
   return (
     <MotionComponent
@@ -259,6 +264,10 @@ export const Terminal = ({
     }
   }, [sequence, activeIndex, sequenceHasStarted])
 
+  // Reserve the final height (20px line + 4px gap per row) so typing never shifts the layout.
+  const rows = Children.count(children)
+  const reservedHeight = `${rows * 1.25 + Math.max(rows - 1, 0) * 0.25}rem`
+
   const wrappedChildren = useMemo(() => {
     if (!sequence) return children
     const array = Children.toArray(children)
@@ -285,7 +294,9 @@ export const Terminal = ({
         </div>
       </div>
       <pre className="p-4">
-        <code className="grid gap-y-1 overflow-auto">{wrappedChildren}</code>
+        <code className="grid content-start gap-y-1 whitespace-pre-wrap break-words" style={{ minHeight: reservedHeight }}>
+          {wrappedChildren}
+        </code>
       </pre>
     </div>
   )

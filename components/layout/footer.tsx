@@ -4,7 +4,7 @@ import { SITE_NAME } from "@/lib/site";
 export function Footer() {
   return (
     <footer className="mt-24 border-t border-border bg-surface" data-pagefind-ignore>
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-10 text-sm text-muted sm:px-6 md:flex-row md:items-center md:justify-between">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-10 text-sm text-muted md:flex-row md:items-center md:justify-between">
         <div>
           <p className="font-heading font-semibold text-foreground">{SITE_NAME}</p>
           <p className="mt-1">Tutorial Laravel 13 berbahasa Indonesia. Gratis, tanpa akun.</p>
@@ -16,7 +16,7 @@ export function Footer() {
         </nav>
       </div>
       <div className="border-t border-border">
-        <p className="mx-auto max-w-7xl px-4 py-4 font-sans text-sm text-muted sm:px-6">
+        <p className="mx-auto max-w-7xl px-6 py-4 font-sans text-sm text-muted">
           Web tutorial ini dibuat oleh zagoours
         </p>
       </div>

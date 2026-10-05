@@ -1,11 +1,15 @@
 "use client";
 
-import { useRef, useState, type ComponentProps } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 type Props = ComponentProps<"pre"> & {
   "data-title"?: string;
   "data-language"?: string;
 };
+
+type CopyState = "idle" | "copied" | "failed";
+
+const LABEL: Record<CopyState, string> = { idle: "Salin", copied: "Tersalin", failed: "Gagal menyalin" };
 
 export function CodeBlock({
   "data-title": title,
@@ -13,16 +17,21 @@ export function CodeBlock({
   ...pre
 }: Props) {
   const ref = useRef<HTMLPreElement>(null);
-  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [state, setState] = useState<CopyState>("idle");
+
+  useEffect(() => () => clearTimeout(timer.current), []);
 
   async function copy() {
+    let next: CopyState = "copied";
     try {
       await navigator.clipboard.writeText(ref.current?.textContent ?? "");
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     } catch {
-      // clipboard blocked (insecure context / permissions): leave the button as is
+      next = "failed"; // clipboard blocked (insecure context / permissions)
     }
+    setState(next);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState("idle"), 2000);
   }
 
   return (
@@ -34,14 +43,16 @@ export function CodeBlock({
         <button
           type="button"
           className="code-block__copy"
-          data-copied={copied}
+          data-copied={state === "copied"}
+          data-failed={state === "failed"}
           onClick={copy}
           aria-label={title ? `Salin kode ${title}` : "Salin kode"}
         >
-          <span aria-live="polite">{copied ? "Tersalin" : "Salin"}</span>
+          <span aria-live="polite">{LABEL[state]}</span>
         </button>
       </div>
-      <pre ref={ref} {...pre} />
+      {/* Scrollable region must be keyboard-focusable so long lines can be scrolled with the arrow keys. */}
+      <pre ref={ref} tabIndex={0} {...pre} />
     </figure>
   );
 }

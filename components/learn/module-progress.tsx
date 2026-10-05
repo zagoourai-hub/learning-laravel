@@ -15,9 +15,10 @@ export function ModuleProgress({ lessonIds, label }: { lessonIds: string[]; labe
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={pct}
+        aria-valuetext={`${done} dari ${lessonIds.length} pelajaran selesai`}
         className="h-1 flex-1 overflow-hidden rounded-full bg-surface-2"
       >
-        <div className="h-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-accent transition-[width] duration-300 ease-out motion-reduce:transition-none" style={{ width: `${pct}%` }} />
       </div>
       <span className="tabular-nums">
         {done}/{lessonIds.length} selesai

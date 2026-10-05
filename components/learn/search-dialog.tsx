@@ -32,6 +32,7 @@ function search(index: SearchEntry[], query: string, f: Filters): Hit[] {
 
 export function SearchDialog() {
   const dialog = useRef<HTMLDialogElement>(null);
+  const input = useRef<HTMLInputElement>(null);
   const [index, setIndex] = useState<SearchEntry[] | null>(null);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
@@ -45,14 +46,25 @@ export function SearchDialog() {
     setActive(0);
   }
 
+  function load() {
+    setError(false);
+    fetch("/search-index.json")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(setIndex)
+      .catch(() => setError(true));
+  }
+
   function open() {
-    dialog.current?.showModal();
-    if (!index) {
-      fetch("/search-index.json")
-        .then((r) => (r.ok ? r.json() : Promise.reject()))
-        .then(setIndex)
-        .catch(() => setError(true));
+    const d = dialog.current;
+    if (!d) return;
+    if (d.open) {
+      // Ctrl/⌘ K again: just refocus the field instead of calling showModal() twice.
+      input.current?.focus();
+      input.current?.select();
+      return;
     }
+    d.showModal();
+    if (!index) load();
   }
 
   function close() {
@@ -74,8 +86,16 @@ export function SearchDialog() {
     };
   });
 
+  useEffect(() => {
+    dialog.current?.querySelector(`[data-hit="${active}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [active, hits.length]);
+
   function onInputKey(e: React.KeyboardEvent) {
-    if (e.key === "ArrowDown") {
+    if (e.key === "Escape") {
+      // type="search" would use the first Escape to clear the field; close the dialog right away instead.
+      e.preventDefault();
+      close();
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive((a) => Math.min(a + 1, hits.length - 1));
     } else if (e.key === "ArrowUp") {
@@ -92,7 +112,7 @@ export function SearchDialog() {
       <button
         type="button"
         onClick={open}
-        className="flex h-10 items-center gap-3 rounded-md border border-border bg-surface px-3 text-sm text-muted transition-colors hover:border-muted hover:text-foreground"
+        className="flex h-10 items-center gap-3 rounded-md border border-border-strong bg-surface px-3 text-sm text-muted transition-colors duration-150 hover:border-muted hover:text-foreground active:bg-surface-2 motion-reduce:transition-none"
         aria-label="Cari materi (Ctrl K)"
       >
         <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -115,6 +135,7 @@ export function SearchDialog() {
             <path d="m20 20-3.5-3.5" />
           </svg>
           <input
+            ref={input}
             autoFocus
             type="search"
             value={query}
@@ -127,18 +148,18 @@ export function SearchDialog() {
             aria-label="Kata kunci"
             className="h-14 flex-1 bg-transparent text-base outline-none placeholder:text-muted"
           />
-          <button type="button" onClick={close} className="rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-2" aria-label="Tutup pencarian">
+          <button type="button" onClick={close} className="min-h-9 rounded-md px-2.5 text-xs text-muted transition-colors duration-150 hover:bg-surface-2 motion-reduce:transition-none" aria-label="Tutup pencarian">
             Esc
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-x-4 gap-y-2 border-b border-border px-4 py-2.5 text-sm">
-          <label className="flex items-center gap-2 text-muted">
+        <div className="grid grid-cols-2 gap-3 border-b border-border px-4 py-2.5 text-sm sm:flex sm:flex-wrap sm:gap-x-4 sm:gap-y-2">
+          <label className="flex min-w-0 flex-col gap-1 text-muted sm:flex-row sm:items-center sm:gap-2">
             Modul
             <select
               value={filters.moduleId}
               onChange={(e) => setFilter("moduleId", e.target.value)}
-              className="h-9 max-w-[14rem] rounded-md border border-border bg-background px-2 text-foreground"
+              className="h-10 w-full min-w-0 rounded-md sm:h-9 sm:max-w-[14rem] sm:w-auto border border-border-strong bg-background px-2 text-foreground"
             >
               <option value="">Semua</option>
               {modules.map(([id, title]) => (
@@ -148,12 +169,12 @@ export function SearchDialog() {
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-2 text-muted">
+          <label className="flex min-w-0 flex-col gap-1 text-muted sm:flex-row sm:items-center sm:gap-2">
             Level
             <select
               value={filters.level}
               onChange={(e) => setFilter("level", e.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-2 text-foreground"
+              className="h-10 w-full rounded-md border border-border-strong bg-background px-2 text-foreground sm:h-9 sm:w-auto"
             >
               <option value="">Semua</option>
               <option value="pemula">Pemula</option>
@@ -162,17 +183,28 @@ export function SearchDialog() {
           </label>
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto p-2" aria-live="polite">
+        <div className="max-h-[60vh] overflow-y-auto overscroll-contain p-2" aria-live="polite">
           {error ? (
-            <p className="px-3 py-8 text-center text-sm text-muted">Indeks pencarian gagal dimuat. Coba muat ulang halaman.</p>
+            <div className="px-3 py-8 text-center text-sm text-muted">
+              <p>Indeks pencarian gagal dimuat.</p>
+              <button
+                type="button"
+                onClick={load}
+                className="mt-3 min-h-10 rounded-md border border-border-strong px-4 font-semibold text-foreground transition-colors duration-150 hover:bg-surface-2 motion-reduce:transition-none"
+              >
+                Coba lagi
+              </button>
+            </div>
           ) : !index ? (
             <p className="px-3 py-8 text-center text-sm text-muted">Memuat indeks…</p>
           ) : query.trim().length < 2 ? (
             <p className="px-3 py-8 text-center text-sm text-muted">Ketik minimal 2 huruf untuk mencari di semua pelajaran.</p>
           ) : hits.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm text-muted">Tidak ada hasil untuk “{query}”.</p>
+            <p className="px-3 py-8 text-center text-sm text-muted">Tidak ada hasil untuk “{query}”. Coba kata kunci lain atau ubah filter.</p>
           ) : (
-            <ul>
+            <>
+              <p className="sr-only">{hits.length} hasil</p>
+              <ul>
               {hits.map((h, i) => (
                 <li key={h.url + i}>
                   <Link
@@ -180,7 +212,8 @@ export function SearchDialog() {
                     data-hit={i}
                     onClick={close}
                     onMouseEnter={() => setActive(i)}
-                    className={`block rounded-md px-3 py-2.5 ${i === active ? "bg-surface-2" : ""}`}
+                    aria-current={i === active ? "true" : undefined}
+                    className={`block rounded-md px-3 py-2.5 transition-colors duration-100 motion-reduce:transition-none ${i === active ? "bg-surface-2" : ""}`}
                   >
                     <span className="block text-xs text-muted">{h.moduleTitle} · {h.lessonTitle}</span>
                     <span className="block font-heading text-sm font-semibold">{h.heading || h.lessonTitle}</span>
@@ -192,7 +225,8 @@ export function SearchDialog() {
                   </Link>
                 </li>
               ))}
-            </ul>
+              </ul>
+            </>
           )}
         </div>
       </dialog>

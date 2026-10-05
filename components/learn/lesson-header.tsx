@@ -18,7 +18,7 @@ export function LessonHeader({ lesson }: { lesson: Lesson }) {
           <Link
             href="/belajar/"
             aria-label="Kembali ke jalur belajar"
-            className="flex size-10 items-center justify-center rounded-md border border-border bg-background text-foreground hover:bg-surface-2 sm:size-8"
+            className="flex size-10 items-center justify-center rounded-md border border-border-strong bg-background text-foreground hover:bg-surface-2 sm:size-8"
           >
             <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M19 12H5M12 19l-7-7 7-7" />

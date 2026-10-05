@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const config = {
   repo: process.env.NEXT_PUBLIC_GISCUS_REPO,
@@ -14,6 +14,7 @@ const theme = () => (document.documentElement.classList.contains("dark") ? "dark
 
 export function Comments() {
   const ref = useRef<HTMLDivElement>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
@@ -45,6 +46,15 @@ export function Comments() {
     );
     io.observe(el);
 
+    const ready = new MutationObserver(() => {
+      const frame = el.querySelector<HTMLIFrameElement>("iframe.giscus-frame");
+      if (!frame) return;
+      ready.disconnect();
+      frame.addEventListener("load", () => setLoaded(true), { once: true });
+    });
+    ready.observe(el, { childList: true, subtree: true });
+    const giveUp = setTimeout(() => setLoaded(true), 10000);
+
     const mo = new MutationObserver(() => {
       el.querySelector<HTMLIFrameElement>("iframe.giscus-frame")?.contentWindow?.postMessage(
         { giscus: { setConfig: { theme: theme() } } },
@@ -55,10 +65,25 @@ export function Comments() {
 
     return () => {
       io.disconnect();
+      ready.disconnect();
+      clearTimeout(giveUp);
       mo.disconnect();
     };
   }, []);
 
   if (!enabled) return <p className="text-sm text-muted">Diskusi belum diaktifkan.</p>;
-  return <div ref={ref} className="giscus min-h-24" />;
+  // Reserve space and show a placeholder until the widget has loaded, so the page does not jump.
+  return (
+    <div className={`relative ${loaded ? "" : "min-h-64"}`}>
+      {!loaded && (
+        <div
+          aria-hidden
+          className="absolute inset-0 flex items-start rounded-md border border-border bg-surface-2/60 p-4 text-sm text-muted motion-safe:animate-pulse"
+        >
+          Memuat diskusi…
+        </div>
+      )}
+      <div ref={ref} className="giscus relative" />
+    </div>
+  );
 }

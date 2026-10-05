@@ -20,7 +20,7 @@ export default function NotFound() {
           Ke jalur belajar
         </Link>
         <OpenSearchButton />
-        <Link href="/" className="inline-flex min-h-11 items-center rounded-md border border-border px-5 text-sm font-semibold hover:border-muted">
+        <Link href="/" className="inline-flex min-h-11 items-center rounded-md border border-border-strong px-5 text-sm font-semibold hover:border-muted">
           Beranda
         </Link>
       </div>
