@@ -285,7 +285,7 @@ Aturan pola:
 
 **Modul 02 — CRUD Pemula (Full Controller)** (12 pelajaran): rencana CRUD Product · migration & model (`$fillable`) · resource controller · layout Blade & halaman index + pagination · create & store (FormRequest, validasi, `old()`, `@error`) · show & route model binding ("`$product` dari mana?") · edit & update · destroy · pencarian · **SweetAlert2** · troubleshooting umum · latihan mandiri CRUD `Book` + checklist "siap lanjut".
 
-**Modul 03 — Next Step: Service Pattern** (8 pelajaran): kenapa controller gemuk bermasalah · membuat `ProductService` · controller tipis + constructor DI · memindah query/logic ke service · testing service · alternatif Action/DTO · kapan perlu & kapan tidak · latihan refactor `Book`.
+**Modul 03 — Next Step: Service Pattern** (9 pelajaran): kenapa controller gemuk bermasalah · membuat `ProductService` · controller tipis + constructor DI · memindah query/logic ke service · testing service · alternatif Action/DTO · kapan perlu & kapan tidak · latihan refactor `Book` · bonus slug unik + upload gambar.
 
 **Modul 04+ (pasca-MVP, "dan lain-lain")**: Eloquent relationships · autentikasi (starter kit) · API Resource & REST · testing (Pest/PHPUnit) · deploy Laravel.
 

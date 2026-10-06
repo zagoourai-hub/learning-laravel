@@ -1,0 +1,801 @@
+---
+title: "Bonus: Slug Unik dan Upload Gambar di ProductService"
+description: "Kembangkan ProductService dengan slug unik otomatis dan upload gambar produk, sehingga terlihat kenapa logic berlapis lebih nyaman ditaruh di service daripada di controller."
+module: "03-service-pattern"
+order: 9
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-06"
+estimatedMinutes: 30
+tags: ["service-pattern", "file-upload", "storage", "slug", "testing"]
+prerequisites: ["03-service-pattern/03-controller-tipis-di"]
+---
+
+Sampai pelajaran 03, `ProductService` masih tipis: tiap method hanya meneruskan satu baris Eloquent. Wajar kalau kamu bertanya, "Untuk apa service kalau isinya cuma itu?" Pelajaran bonus ini menjawabnya dengan dua fitur yang memang punya aturan bisnis:
+
+- **Slug unik.** Produk "Kopi Susu" mendapat slug `kopi-susu`; produk kedua dengan nama sama mendapat `kopi-susu-2`.
+- **Gambar produk.** Gambar disimpan di disk `public`, diganti saat edit, dan ikut dihapus saat produk dihapus.
+
+Kedua aturan itu ditaruh di `ProductService`. Controller tetap tipis, dan aturan yang sama otomatis berlaku kalau nanti produk dibuat dari Artisan command atau API.
+
+Titik awal pelajaran ini adalah kode akhir pelajaran 03: `ProductService` dari pelajaran 02 dan `ProductController` tipis dari pelajaran 03.
+
+## Langkah 1 — Petakan siapa mengerjakan apa
+
+| Lapisan | Tugas di fitur ini | Tidak boleh |
+|---|---|---|
+| Form Request | Validasi file: harus gambar, maksimal 2 MB | Menyimpan file |
+| Controller | Memisahkan data teks dan file dari request, lalu memanggil service | Membuat slug atau menyentuh `Storage` |
+| Service | Membuat slug unik, menyimpan dan menghapus gambar | Menerima object `Request`, mengembalikan `redirect()` atau `view()` |
+| Model | Mengizinkan kolom `slug` dan `image` diisi massal | Logic bisnis |
+
+Aturan yang sama seperti pelajaran 02: **service menerima data biasa**. Data teks dikirim sebagai `array`, gambar dikirim sebagai `UploadedFile` (atau `null` kalau tidak ada).
+
+## Langkah 2 — Tambah kolom `slug` dan `image`
+
+Tabel `products` sudah berisi data, jadi kita tidak mengubah migration lama. Buat migration baru yang menambah kolom:
+
+```bash
+php artisan make:migration add_slug_and_image_to_products_table --table=products
+```
+
+Kolom `slug` dibuat `nullable()` karena produk lama belum punya slug. Kalau dibuat wajib, SQLite menolak menambah kolom `NOT NULL` tanpa nilai default ke tabel yang sudah berisi data. Produk lama akan mendapat slug saat diedit (lihat Langkah 5).
+
+Here's your complete `database/migrations/xxxx_xx_xx_xxxxxx_add_slug_and_image_to_products_table.php`:
+
+```php title="database/migrations/xxxx_xx_xx_xxxxxx_add_slug_and_image_to_products_table.php"
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('products', function (Blueprint $table) {
+            $table->string('slug')->nullable()->unique()->after('name');
+            $table->string('image')->nullable()->after('stock');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('products', function (Blueprint $table) {
+            $table->dropUnique(['slug']);
+            $table->dropColumn(['slug', 'image']);
+        });
+    }
+};
+```
+
+Jalankan migration, lalu buat symlink supaya file di `storage/app/public` bisa diakses dari browser lewat `/storage/...`:
+
+```bash
+php artisan migrate
+php artisan storage:link
+```
+
+> **Penting:** index `unique` adalah pengaman terakhir. Service yang membuat slug unik, tetapi kalau ada bug atau dua request masuk bersamaan, database tetap menolak slug ganda.
+
+## Langkah 3 — Izinkan kolom baru di model
+
+Tambahkan `slug` dan `image` ke `$fillable`. Tanpa ini, `Product::create($data)` diam-diam mengabaikan kedua kolom tersebut.
+
+Here's your complete `app/Models/Product.php`:
+
+```php title="app/Models/Product.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Product extends Model
+{
+    protected $fillable = [
+        'name',
+        'slug',
+        'description',
+        'price',
+        'stock',
+        'image',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'price' => 'decimal:2',
+            'stock' => 'integer',
+        ];
+    }
+}
+```
+
+## Langkah 4 — Validasi gambar di Form Request
+
+Tambah satu aturan dan dua pesan di **kedua** Form Request. Gambar tidak wajib (`nullable`), harus berupa file gambar, dan maksimal 2048 KB.
+
+```php
+'image' => ['nullable', 'image', 'max:2048'],
+```
+
+Slug **tidak** divalidasi di sini karena pengguna tidak mengisinya; service yang membuatnya.
+
+Here's your complete `app/Http/Requests/StoreProductRequest.php`:
+
+```php title="app/Http/Requests/StoreProductRequest.php"
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class StoreProductRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'image' => ['nullable', 'image', 'max:2048'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'Nama produk wajib diisi.',
+            'name.max' => 'Nama produk maksimal 255 karakter.',
+            'price.required' => 'Harga wajib diisi.',
+            'price.numeric' => 'Harga harus berupa angka.',
+            'price.min' => 'Harga tidak boleh negatif.',
+            'stock.required' => 'Stok wajib diisi.',
+            'stock.integer' => 'Stok harus berupa bilangan bulat.',
+            'stock.min' => 'Stok tidak boleh negatif.',
+            'image.image' => 'File harus berupa gambar.',
+            'image.max' => 'Ukuran gambar maksimal 2 MB.',
+        ];
+    }
+}
+```
+
+Here's your complete `app/Http/Requests/UpdateProductRequest.php`:
+
+```php title="app/Http/Requests/UpdateProductRequest.php"
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class UpdateProductRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'image' => ['nullable', 'image', 'max:2048'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'Nama produk wajib diisi.',
+            'name.max' => 'Nama produk maksimal 255 karakter.',
+            'price.required' => 'Harga wajib diisi.',
+            'price.numeric' => 'Harga harus berupa angka.',
+            'price.min' => 'Harga tidak boleh negatif.',
+            'stock.required' => 'Stok wajib diisi.',
+            'stock.integer' => 'Stok harus berupa bilangan bulat.',
+            'stock.min' => 'Stok tidak boleh negatif.',
+            'image.image' => 'File harus berupa gambar.',
+            'image.max' => 'Ukuran gambar maksimal 2 MB.',
+        ];
+    }
+}
+```
+
+## Langkah 5 — Kembangkan ProductService
+
+Ini inti pelajarannya. Kita ubah tiga method dan menambah dua method `private`.
+
+**Slug unik.** `Str::slug()` mengubah "Kopi Susu" menjadi `kopi-susu`. Kalau slug itu sudah dipakai produk lain, tambahkan angka di belakang sampai ketemu yang kosong. Saat update, produk yang sedang diedit dikecualikan dengan `whereKeyNot()`, supaya produk tidak "bentrok dengan dirinya sendiri".
+
+```php
+private function generateUniqueSlug(string $name, ?int $ignoreId = null): string
+{
+    $base = Str::slug($name);
+    $slug = $base;
+    $counter = 2;
+
+    while (
+        Product::where('slug', $slug)
+            ->when($ignoreId !== null, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->exists()
+    ) {
+        $slug = "{$base}-{$counter}";
+        $counter++;
+    }
+
+    return $slug;
+}
+```
+
+**Gambar.** `$image->store('products', 'public')` menyimpan file ke `storage/app/public/products` dengan nama acak yang unik, lalu mengembalikan path-nya (misalnya `products/abc123.jpg`). Path inilah yang disimpan di kolom `image`.
+
+**Urutan saat update dan delete itu penting.** Database dan file system adalah dua tempat berbeda, dan transaksi database **tidak** bisa membatalkan operasi file. Jadi aturannya: ubah database dulu, hapus file lama **setelah** database berhasil. Kalau urutannya dibalik dan query gagal, gambar sudah terhapus padahal datanya masih menunjuk ke file itu.
+
+Karena setiap method hanya menjalankan satu query tulis (`create` atau `update` atau `delete`), kita tidak perlu `DB::transaction()` di sini. Transaksi baru berguna kalau satu aksi menulis ke beberapa tabel sekaligus, seperti yang dibahas di pelajaran 04.
+
+Here's your complete `app/Services/ProductService.php`:
+
+```php title="app/Services/ProductService.php"
+<?php
+
+namespace App\Services;
+
+use App\Models\Product;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+class ProductService
+{
+    public function paginate(): LengthAwarePaginator
+    {
+        return Product::latest()->paginate(10);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function create(array $data, ?UploadedFile $image = null): Product
+    {
+        $data['slug'] = $this->generateUniqueSlug($data['name']);
+
+        if ($image !== null) {
+            $data['image'] = $image->store('products', 'public');
+        }
+
+        return Product::create($data);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function update(Product $product, array $data, ?UploadedFile $image = null): void
+    {
+        $oldImage = $product->image;
+
+        if ($data['name'] !== $product->name || $product->slug === null) {
+            $data['slug'] = $this->generateUniqueSlug($data['name'], $product->id);
+        }
+
+        if ($image !== null) {
+            $data['image'] = $image->store('products', 'public');
+        }
+
+        $product->update($data);
+
+        if ($image !== null) {
+            $this->deleteImage($oldImage);
+        }
+    }
+
+    public function delete(Product $product): void
+    {
+        $image = $product->image;
+
+        $product->delete();
+
+        $this->deleteImage($image);
+    }
+
+    private function generateUniqueSlug(string $name, ?int $ignoreId = null): string
+    {
+        $base = Str::slug($name);
+        $slug = $base;
+        $counter = 2;
+
+        while (
+            Product::where('slug', $slug)
+                ->when($ignoreId !== null, fn ($query) => $query->whereKeyNot($ignoreId))
+                ->exists()
+        ) {
+            $slug = "{$base}-{$counter}";
+            $counter++;
+        }
+
+        return $slug;
+    }
+
+    private function deleteImage(?string $path): void
+    {
+        if ($path !== null) {
+            Storage::disk('public')->delete($path);
+        }
+    }
+}
+```
+
+Perhatikan `$product->slug === null` di `update()`: inilah yang memberi slug pada produk lama (dibuat sebelum migration Langkah 2) begitu produk itu diedit.
+
+## Langkah 6 — Controller: pisahkan data teks dan file
+
+Controller hanya berubah di `store()` dan `update()`. `$request->safe()->except('image')` mengambil data yang lolos validasi **tanpa** field `image`, karena file dikirim terpisah lewat `$request->file('image')`. Kalau pengguna tidak memilih file, `file('image')` bernilai `null` dan service melewati bagian gambar.
+
+```php
+// sebelum
+$this->products->create($request->validated());
+
+// sesudah
+$this->products->create(
+    $request->safe()->except('image'),
+    $request->file('image'),
+);
+```
+
+### Final Complete Controller
+
+Here's your complete `app/Http/Controllers/ProductController.php`:
+
+```php title="app/Http/Controllers/ProductController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Product;
+use App\Services\ProductService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
+
+class ProductController extends Controller
+{
+    public function __construct(
+        protected ProductService $products,
+    ) {}
+
+    public function index(): View
+    {
+        $products = $this->products->paginate();
+
+        return view('products.index', compact('products'));
+    }
+
+    public function create(): View
+    {
+        return view('products.create');
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        $this->products->create(
+            $request->safe()->except('image'),
+            $request->file('image'),
+        );
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil ditambahkan.');
+    }
+
+    public function show(Product $product): View
+    {
+        return view('products.show', compact('product'));
+    }
+
+    public function edit(Product $product): View
+    {
+        return view('products.edit', compact('product'));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        $this->products->update(
+            $product,
+            $request->safe()->except('image'),
+            $request->file('image'),
+        );
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil diperbarui.');
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        $this->products->delete($product);
+
+        return to_route('products.index')
+            ->with('success', 'Produk berhasil dihapus.');
+    }
+}
+```
+
+Bandingkan dengan godaan menulis semuanya di controller: slug, `store()`, dan `Storage::delete()` akan tersebar di `store()`, `update()`, dan `destroy()`. Di sini controller tidak tahu apa pun soal slug atau lokasi file.
+
+## Langkah 7 — Form dan halaman detail
+
+Form yang mengirim file **wajib** memakai `enctype="multipart/form-data"`. Tanpa atribut itu, browser hanya mengirim nama file, dan `$request->file('image')` selalu `null`.
+
+Tambahkan input file sebelum tombol simpan:
+
+```blade
+<div>
+    <label for="image" class="mb-1 block text-sm font-medium">Gambar</label>
+    <input type="file" id="image" name="image" accept="image/*"
+           class="w-full rounded-md border border-gray-300 px-3 py-2">
+    @error('image')
+        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+    @enderror
+</div>
+```
+
+Here's your complete `resources/views/products/create.blade.php`:
+
+```blade title="resources/views/products/create.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Tambah Produk')
+
+@section('content')
+    <h1 class="mb-6 text-2xl font-bold">Tambah Produk</h1>
+
+    <form action="{{ route('products.store') }}" method="POST" enctype="multipart/form-data"
+          class="space-y-5 rounded-md bg-white p-6 shadow">
+        @csrf
+
+        <div>
+            <label for="name" class="mb-1 block text-sm font-medium">Nama</label>
+            <input type="text" id="name" name="name" value="{{ old('name') }}"
+                   class="w-full rounded-md border border-gray-300 px-3 py-2">
+            @error('name')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="description" class="mb-1 block text-sm font-medium">Deskripsi</label>
+            <textarea id="description" name="description" rows="4"
+                      class="w-full rounded-md border border-gray-300 px-3 py-2">{{ old('description') }}</textarea>
+            @error('description')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div class="grid gap-5 sm:grid-cols-2">
+            <div>
+                <label for="price" class="mb-1 block text-sm font-medium">Harga</label>
+                <input type="number" step="0.01" id="price" name="price" value="{{ old('price') }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('price')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="stock" class="mb-1 block text-sm font-medium">Stok</label>
+                <input type="number" id="stock" name="stock" value="{{ old('stock', 0) }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('stock')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+        </div>
+
+        <div>
+            <label for="image" class="mb-1 block text-sm font-medium">Gambar</label>
+            <input type="file" id="image" name="image" accept="image/*"
+                   class="w-full rounded-md border border-gray-300 px-3 py-2">
+            @error('image')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+                Simpan
+            </button>
+            <a href="{{ route('products.index') }}" class="rounded-md border px-4 py-2 hover:bg-gray-50">
+                Batal
+            </a>
+        </div>
+    </form>
+@endsection
+```
+
+Di halaman edit, tampilkan juga gambar yang sedang dipakai supaya pengguna tahu apa yang akan diganti. Input file tidak bisa diisi ulang dengan `old()`, jadi kalau validasi gagal pengguna perlu memilih file lagi.
+
+Here's your complete `resources/views/products/edit.blade.php`:
+
+```blade title="resources/views/products/edit.blade.php"
+@extends('layouts.app')
+
+@section('title', 'Edit Produk')
+
+@section('content')
+    <h1 class="mb-6 text-2xl font-bold">Edit Produk</h1>
+
+    <form action="{{ route('products.update', $product) }}" method="POST" enctype="multipart/form-data"
+          class="space-y-5 rounded-md bg-white p-6 shadow">
+        @csrf
+        @method('PUT')
+
+        <div>
+            <label for="name" class="mb-1 block text-sm font-medium">Nama</label>
+            <input type="text" id="name" name="name" value="{{ old('name', $product->name) }}"
+                   class="w-full rounded-md border border-gray-300 px-3 py-2">
+            @error('name')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="description" class="mb-1 block text-sm font-medium">Deskripsi</label>
+            <textarea id="description" name="description" rows="4"
+                      class="w-full rounded-md border border-gray-300 px-3 py-2">{{ old('description', $product->description) }}</textarea>
+            @error('description')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div class="grid gap-5 sm:grid-cols-2">
+            <div>
+                <label for="price" class="mb-1 block text-sm font-medium">Harga</label>
+                <input type="number" step="0.01" id="price" name="price" value="{{ old('price', $product->price) }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('price')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div>
+                <label for="stock" class="mb-1 block text-sm font-medium">Stok</label>
+                <input type="number" id="stock" name="stock" value="{{ old('stock', $product->stock) }}"
+                       class="w-full rounded-md border border-gray-300 px-3 py-2">
+                @error('stock')
+                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+        </div>
+
+        <div>
+            <label for="image" class="mb-1 block text-sm font-medium">Gambar</label>
+            @if ($product->image)
+                <img src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}"
+                     class="mb-2 h-32 w-32 rounded-md object-cover">
+            @endif
+            <input type="file" id="image" name="image" accept="image/*"
+                   class="w-full rounded-md border border-gray-300 px-3 py-2">
+            <p class="mt-1 text-sm text-gray-500">Kosongkan kalau tidak ingin mengganti gambar.</p>
+            @error('image')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+                Perbarui
+            </button>
+            <a href="{{ route('products.index') }}" class="rounded-md border px-4 py-2 hover:bg-gray-50">
+                Batal
+            </a>
+        </div>
+    </form>
+@endsection
+```
+
+Halaman detail menampilkan gambar (kalau ada) dan slug-nya.
+
+Here's your complete `resources/views/products/show.blade.php`:
+
+```blade title="resources/views/products/show.blade.php"
+@extends('layouts.app')
+
+@section('title', $product->name)
+
+@section('content')
+    <div class="rounded-md bg-white p-6 shadow">
+        <h1 class="mb-4 text-2xl font-bold">{{ $product->name }}</h1>
+
+        @if ($product->image)
+            <img src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}"
+                 class="mb-4 h-48 w-48 rounded-md object-cover">
+        @endif
+
+        <dl class="space-y-3 text-sm">
+            <div>
+                <dt class="font-semibold">Slug</dt>
+                <dd>{{ $product->slug ?: '-' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Deskripsi</dt>
+                <dd>{{ $product->description ?: '-' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Harga</dt>
+                <dd>Rp {{ number_format($product->price, 0, ',', '.') }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold">Stok</dt>
+                <dd>{{ $product->stock }}</dd>
+            </div>
+        </dl>
+
+        <div class="mt-6 flex gap-3">
+            <a href="{{ route('products.edit', $product) }}"
+               class="rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">Edit</a>
+            <a href="{{ route('products.index') }}"
+               class="rounded-md border px-4 py-2 hover:bg-gray-50">Kembali</a>
+        </div>
+    </div>
+@endsection
+```
+
+Route, `index.blade.php`, dan layout tidak berubah.
+
+## Langkah 8 — Tes slug dan gambar
+
+Inilah keuntungan terbesar service: aturan slug dan gambar bisa dites langsung tanpa membuka browser atau mengirim request HTTP. `Storage::fake('public')` mengganti disk `public` dengan disk sementara, jadi tes tidak mengotori folder `storage` sungguhan. `UploadedFile::fake()->image()` membuat file gambar palsu.
+
+```bash
+php artisan make:test ProductSlugImageTest
+```
+
+Here's your complete `tests/Feature/ProductSlugImageTest.php`:
+
+```php title="tests/Feature/ProductSlugImageTest.php"
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Product;
+use App\Services\ProductService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Tests\TestCase;
+
+class ProductSlugImageTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Storage::fake('public');
+    }
+
+    private function dataProduk(array $attributes = []): array
+    {
+        return array_merge([
+            'name' => 'Kopi Susu',
+            'description' => 'Kopi susu gula aren',
+            'price' => 18000,
+            'stock' => 10,
+        ], $attributes);
+    }
+
+    public function test_create_membuat_slug_dari_nama(): void
+    {
+        $product = app(ProductService::class)->create($this->dataProduk());
+
+        $this->assertSame('kopi-susu', $product->slug);
+    }
+
+    public function test_nama_kembar_mendapat_slug_berbeda(): void
+    {
+        $service = app(ProductService::class);
+
+        $service->create($this->dataProduk());
+        $kedua = $service->create($this->dataProduk());
+
+        $this->assertSame('kopi-susu-2', $kedua->slug);
+    }
+
+    public function test_update_tanpa_ganti_nama_tidak_mengubah_slug(): void
+    {
+        $service = app(ProductService::class);
+        $product = $service->create($this->dataProduk());
+
+        $service->update($product, $this->dataProduk(['stock' => 0]));
+
+        $this->assertSame('kopi-susu', $product->fresh()->slug);
+    }
+
+    public function test_update_mengganti_gambar_dan_menghapus_yang_lama(): void
+    {
+        $service = app(ProductService::class);
+        $product = $service->create($this->dataProduk(), UploadedFile::fake()->image('lama.jpg'));
+        $gambarLama = $product->image;
+
+        $service->update($product, $this->dataProduk(), UploadedFile::fake()->image('baru.jpg'));
+
+        Storage::disk('public')->assertMissing($gambarLama);
+        Storage::disk('public')->assertExists($product->fresh()->image);
+    }
+
+    public function test_delete_menghapus_produk_dan_gambarnya(): void
+    {
+        $service = app(ProductService::class);
+        $product = $service->create($this->dataProduk(), UploadedFile::fake()->image('kopi.jpg'));
+        $gambar = $product->image;
+
+        $service->delete($product);
+
+        $this->assertModelMissing($product);
+        Storage::disk('public')->assertMissing($gambar);
+    }
+}
+```
+
+Jalankan tes baru, lalu seluruh tes supaya terlihat tes dari pelajaran 05 tetap lolos:
+
+```bash
+php artisan test --filter=ProductSlugImageTest
+php artisan test
+```
+
+Tes `ProductTest` dan `ProductServiceTest` dari pelajaran 05 tidak perlu diubah: parameter `$image` bersifat opsional, dan produk tanpa gambar tetap berjalan seperti sebelumnya.
+
+## Langkah 9 — Uji coba di browser
+
+Jalankan `composer run dev`, lalu:
+
+1. Tambah produk "Kopi Susu" dengan gambar. Buka detailnya: slug `kopi-susu` dan gambar tampil.
+2. Tambah produk kedua bernama "Kopi Susu". Slug-nya `kopi-susu-2`.
+3. Edit produk pertama tanpa memilih gambar. Gambar lama tetap ada.
+4. Edit lagi dengan gambar baru. Gambar berganti, dan file lama hilang dari `storage/app/public/products`.
+5. Unggah file `.pdf`. Muncul pesan "File harus berupa gambar."
+6. Hapus produk. File gambarnya ikut hilang dari folder tadi.
+
+## Error yang sering muncul
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `$request->file('image')` selalu `null` | Form tidak memakai `enctype="multipart/form-data"` | Tambahkan atribut itu di tag `<form>` |
+| Gambar tersimpan tetapi browser menampilkan 404 | Symlink `public/storage` belum dibuat | Jalankan `php artisan storage:link` |
+| Kolom `slug` dan `image` di database tetap kosong | Belum ditambahkan ke `$fillable` | Tambahkan `'slug'` dan `'image'` di model |
+| `Cannot add a NOT NULL column with default value NULL` | Kolom `slug` dibuat wajib di tabel yang sudah berisi data | Pakai `nullable()` seperti di Langkah 2 |
+| `UNIQUE constraint failed: products.slug` | Slug dibuat di luar service (misalnya langsung `Product::create()` dengan slug manual) | Selalu buat produk lewat `ProductService` |
+| `GD extension is not installed` saat tes | `UploadedFile::fake()->image()` butuh ekstensi GD | Aktifkan `extension=gd` di `php.ini` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa service menerima `?UploadedFile`, bukan seluruh object `Request`?
+- [ ] Kenapa file lama dihapus **setelah** `$product->update()`, bukan sebelumnya?
+- [ ] Kenapa `DB::transaction()` tidak membantu kalau yang gagal adalah operasi file?
+- [ ] Apa fungsi `whereKeyNot($ignoreId)` di `generateUniqueSlug()`?
+- [ ] Kenapa kolom `slug` tetap diberi index `unique` padahal service sudah membuatnya unik?
