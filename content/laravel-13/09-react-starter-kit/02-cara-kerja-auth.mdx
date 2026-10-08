@@ -1,0 +1,85 @@
+---
+title: "Cara Kerja Auth di React Starter Kit"
+description: "Fitur auth bawaan, alur login lewat Fortify, proteksi route dengan middleware auth dan verified, mengaktifkan fitur di config/fortify.php, dan mengambil data user di React."
+module: "09-react-starter-kit"
+order: 2
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 15
+tags: ["react", "inertia", "fortify", "auth", "middleware"]
+prerequisites: ["09-react-starter-kit/01-install-dan-struktur"]
+nextStep: "09-react-starter-kit/03-verifikasi-email-pilihan"
+---
+
+Pelajaran ini menjelaskan apa yang sudah kamu dapat dari starter kit tanpa menulis satu baris pun.
+
+## Fitur bawaan
+
+| Fitur | URL |
+|---|---|
+| Register | `/register` |
+| Login | `/login` |
+| Lupa password | `/forgot-password` |
+| Profile dan password | `/settings/profile`, `/settings/password` |
+| 2FA dan passkey (jika aktif) | `/settings/...` |
+
+## Alur login
+
+```
+Form login (pages/auth/login.tsx)
+  → POST /login (route Fortify)
+  → rate limiter + authenticate (FortifyServiceProvider)
+  → session dibuat
+  → redirect ke /dashboard
+```
+
+## Proteksi route
+
+```php
+// routes/web.php
+Route::middleware(['auth'])->group(function () {
+    Route::get('dashboard', fn () => Inertia::render('dashboard'))->name('dashboard');
+});
+```
+
+- `auth`: harus login. Kalau tidak, user di-redirect ke `/login`.
+- `verified`: email harus terverifikasi. Ini hanya bekerja kalau `User` mengimplementasikan `MustVerifyEmail` (dibahas di pelajaran berikutnya).
+
+## Aktifkan atau matikan fitur
+
+Fitur Fortify diatur di `config/fortify.php`:
+
+```php
+'features' => [
+    Features::registration(),
+    Features::resetPasswords(),
+    // Features::emailVerification(),   // comment = verifikasi email mati
+    Features::twoFactorAuthentication([
+        'confirm' => true,
+        'confirmPassword' => true,
+    ]),
+],
+```
+
+## Ambil data user di React
+
+Inertia membagikan user yang login lewat `HandleInertiaRequests`, jadi di komponen mana pun kamu bisa membacanya:
+
+```tsx
+import { usePage } from '@inertiajs/react';
+
+const { auth } = usePage().props; // auth.user.name, auth.user.email
+```
+
+## Cara menguji
+
+1. Buka `/register`, buat akun.
+2. Logout, lalu login lagi.
+3. Akses `/dashboard` tanpa login. Kamu harus terlempar ke `/login`.
+
+## Cek pemahamanmu
+
+- [ ] Apa beda middleware `auth` dan `verified`?
+- [ ] Di file mana fitur registrasi dan reset password diaktifkan?
+- [ ] Bagaimana komponen React membaca nama user yang sedang login?

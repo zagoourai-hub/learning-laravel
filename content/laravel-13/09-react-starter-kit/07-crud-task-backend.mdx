@@ -1,0 +1,300 @@
+---
+title: "CRUD Task: Migration, Model, Policy, Controller, dan Route"
+description: "Bangun backend CRUD Task per user di React Starter Kit: migration, model dengan atribut Fillable, TaskPolicy, Form Request, TaskController dengan Inertia, route resource, dan helper Wayfinder."
+module: "09-react-starter-kit"
+order: 7
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 35
+tags: ["react", "inertia", "crud", "policy", "form-request", "wayfinder"]
+prerequisites: ["09-react-starter-kit/02-cara-kerja-auth"]
+nextStep: "09-react-starter-kit/08-crud-task-halaman-react"
+---
+
+Sekarang kita buat CRUD **Task**: to-do yang dimiliki masing-masing user. Alurnya:
+
+**Migration → Model → Policy → Form Request → Controller → Route → Halaman React**
+
+Pelajaran ini mengerjakan semua sisi backend. Halaman React ada di pelajaran berikutnya.
+
+## Generate file
+
+```bash
+php artisan make:model Task -mfc --requests --policy
+```
+
+Perintah ini membuat Model, Migration, Factory, Controller, `StoreTaskRequest`, `UpdateTaskRequest`, dan `TaskPolicy`.
+
+## Migration
+
+Isi method `up()`:
+
+```php
+public function up(): void
+{
+    Schema::create('tasks', function (Blueprint $table) {
+        $table->id();
+        $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+        $table->string('title');
+        $table->text('description')->nullable();
+        $table->boolean('is_done')->default(false);
+        $table->timestamps();
+    });
+}
+```
+
+```bash
+php artisan migrate
+```
+
+## Model
+
+Here's your complete `app/Models/Task.php`:
+
+```php title="app/Models/Task.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+#[Fillable(['title', 'description', 'is_done'])]
+class Task extends Model
+{
+    use HasFactory;
+
+    protected function casts(): array
+    {
+        return ['is_done' => 'boolean'];
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+}
+```
+
+> Starter kit ini memakai atribut `#[Fillable]`. Kalau versi kamu memakai `protected $fillable = [...]`, ikuti gaya yang ada di `User.php`.
+
+Tambahkan relasi di `User.php`:
+
+```php
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+public function tasks(): HasMany
+{
+    return $this->hasMany(Task::class);
+}
+```
+
+## Policy
+
+Policy memastikan user hanya bisa mengubah dan menghapus task miliknya.
+
+Here's your complete `app/Policies/TaskPolicy.php`:
+
+```php title="app/Policies/TaskPolicy.php"
+<?php
+
+namespace App\Policies;
+
+use App\Models\Task;
+use App\Models\User;
+
+class TaskPolicy
+{
+    public function update(User $user, Task $task): bool
+    {
+        return $task->user_id === $user->id;
+    }
+
+    public function delete(User $user, Task $task): bool
+    {
+        return $task->user_id === $user->id;
+    }
+}
+```
+
+Policy ter-discover otomatis karena `Task` berpasangan dengan `TaskPolicy`.
+
+## Form Request
+
+Here's your complete `app/Http/Requests/StoreTaskRequest.php`:
+
+```php title="app/Http/Requests/StoreTaskRequest.php"
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class StoreTaskRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true; // route is already protected by auth middleware
+    }
+
+    /** @return array<string, array<int, string>> */
+    public function rules(): array
+    {
+        return [
+            'title' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:2000'],
+        ];
+    }
+}
+```
+
+Here's your complete `app/Http/Requests/UpdateTaskRequest.php`:
+
+```php title="app/Http/Requests/UpdateTaskRequest.php"
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class UpdateTaskRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return $this->user()->can('update', $this->route('task'));
+    }
+
+    /** @return array<string, array<int, string>> */
+    public function rules(): array
+    {
+        return [
+            'title' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:2000'],
+            'is_done' => ['required', 'boolean'],
+        ];
+    }
+}
+```
+
+## Controller
+
+Controller mengembalikan `Inertia::render()` dengan nama halaman React, bukan view Blade.
+
+Here's your complete `app/Http/Controllers/TaskController.php`:
+
+```php title="app/Http/Controllers/TaskController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreTaskRequest;
+use App\Http\Requests\UpdateTaskRequest;
+use App\Models\Task;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class TaskController extends Controller
+{
+    public function index(Request $request): Response
+    {
+        $tasks = $request->user()
+            ->tasks()
+            ->latest()
+            ->paginate(10)
+            ->withQueryString();
+
+        return Inertia::render('tasks/index', [
+            'tasks' => $tasks,
+        ]);
+    }
+
+    public function create(): Response
+    {
+        return Inertia::render('tasks/create');
+    }
+
+    public function store(StoreTaskRequest $request): RedirectResponse
+    {
+        $request->user()->tasks()->create($request->validated());
+
+        return to_route('tasks.index');
+    }
+
+    public function edit(Task $task): Response
+    {
+        Gate::authorize('update', $task);
+
+        return Inertia::render('tasks/edit', [
+            'task' => $task,
+        ]);
+    }
+
+    public function update(UpdateTaskRequest $request, Task $task): RedirectResponse
+    {
+        $task->update($request->validated());
+
+        return to_route('tasks.index');
+    }
+
+    public function destroy(Task $task): RedirectResponse
+    {
+        Gate::authorize('delete', $task);
+
+        $task->delete();
+
+        return to_route('tasks.index');
+    }
+}
+```
+
+## Route
+
+```php
+use App\Http\Controllers\TaskController;
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('dashboard', fn () => Inertia::render('dashboard'))->name('dashboard');
+
+    Route::resource('tasks', TaskController::class)->except(['show']);
+});
+```
+
+Kalau verifikasi email aktif (pelajaran 04 atau 05), pakai `['auth', 'verified']`.
+
+```bash
+php artisan route:list --name=tasks
+```
+
+## Wayfinder
+
+Helper TypeScript di-generate otomatis saat dev server berjalan. Untuk generate manual:
+
+```bash
+php artisan wayfinder:generate --with-form
+```
+
+Pemakaian di React:
+
+```ts
+import { index, create, store, edit, update, destroy } from '@/actions/App/Http/Controllers/TaskController';
+
+index.url();        // "/tasks"
+edit.url(5);        // "/tasks/5/edit"
+store.form();       // { action: "/tasks", method: "post" }
+update.form(5);     // form dengan method spoofing PUT
+```
+
+Dengan Wayfinder, URL tidak ditulis manual di React. Kalau route berubah, TypeScript langsung memberi tahu bagian mana yang rusak.
+
+## Cek pemahamanmu
+
+- [ ] Kenapa `UpdateTaskRequest` memakai `can('update', ...)`, sedangkan `StoreTaskRequest` cukup `return true`?
+- [ ] Kenapa `store()` memakai `$request->user()->tasks()->create(...)` dan bukan `Task::create(...)`?
+- [ ] Apa yang dikembalikan `index.url()` dan `edit.url(5)`?
+- [ ] Apa fungsi `->except(['show'])` pada `Route::resource`?

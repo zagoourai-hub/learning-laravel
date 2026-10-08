@@ -1,0 +1,268 @@
+---
+title: "Verifikasi Email Kode OTP: Controller, Halaman, dan Test"
+description: "Selesaikan verifikasi OTP: Form Request, EmailVerificationCodeController, route dengan throttle, halaman React verify-email berbasis Wayfinder, test Pest, dan catatan keamanan."
+module: "09-react-starter-kit"
+order: 6
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 30
+tags: ["react", "fortify", "verifikasi-email", "otp", "wayfinder", "pest"]
+prerequisites: ["09-react-starter-kit/05-verifikasi-email-otp-backend"]
+nextStep: "09-react-starter-kit/07-crud-task-backend"
+---
+
+Service dan notification sudah siap. Sekarang kita sambungkan ke HTTP: Form Request, controller, route, dan halaman React.
+
+## Form Request dan controller
+
+```bash
+php artisan make:request VerifyEmailCodeRequest
+php artisan make:controller Auth/EmailVerificationCodeController
+```
+
+Here's your complete `app/Http/Requests/VerifyEmailCodeRequest.php`:
+
+```php title="app/Http/Requests/VerifyEmailCodeRequest.php"
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class VerifyEmailCodeRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /** @return array<string, array<int, string>> */
+    public function rules(): array
+    {
+        return [
+            'code' => ['required', 'digits:6'],
+        ];
+    }
+}
+```
+
+Here's your complete `app/Http/Controllers/Auth/EmailVerificationCodeController.php`:
+
+```php title="app/Http/Controllers/Auth/EmailVerificationCodeController.php"
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\VerifyEmailCodeRequest;
+use App\Services\EmailVerificationCodeService;
+use Illuminate\Auth\Events\Verified;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+
+class EmailVerificationCodeController extends Controller
+{
+    public function __construct(
+        private readonly EmailVerificationCodeService $codes,
+    ) {}
+
+    public function send(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        if ($user->hasVerifiedEmail()) {
+            return to_route('dashboard');
+        }
+
+        if (! $this->codes->canResend($user)) {
+            throw ValidationException::withMessages([
+                'code' => 'Tunggu 1 menit sebelum kirim ulang kode.',
+            ]);
+        }
+
+        $this->codes->send($user);
+
+        return back()->with('status', 'verification-code-sent');
+    }
+
+    public function verify(VerifyEmailCodeRequest $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        if ($user->hasVerifiedEmail()) {
+            return to_route('dashboard');
+        }
+
+        if (! $this->codes->verify($user, $request->validated('code'))) {
+            throw ValidationException::withMessages([
+                'code' => 'Kode salah atau sudah kedaluwarsa.',
+            ]);
+        }
+
+        $user->markEmailAsVerified();
+        event(new Verified($user));
+
+        return to_route('dashboard');
+    }
+}
+```
+
+## Route
+
+Middleware hanya `auth` (tanpa `verified`), karena user belum verified saat mengakses route ini.
+
+```php
+// routes/web.php
+use App\Http\Controllers\Auth\EmailVerificationCodeController;
+
+Route::middleware(['auth', 'throttle:6,1'])
+    ->prefix('email/verification-code')
+    ->name('verification.code.')
+    ->group(function () {
+        Route::post('send', [EmailVerificationCodeController::class, 'send'])->name('send');
+        Route::post('verify', [EmailVerificationCodeController::class, 'verify'])->name('verify');
+    });
+```
+
+Ada dua lapis proteksi brute force: `throttle:6,1` (maksimal 6 request per menit) dan maksimal 5 percobaan per kode.
+
+Setelah route ditambahkan, generate ulang helper Wayfinder (otomatis kalau `composer run dev` aktif):
+
+```bash
+php artisan wayfinder:generate --with-form
+```
+
+## Halaman React
+
+Ganti isi `resources/js/pages/auth/verify-email.tsx`. Bungkus dengan layout auth kamu seperti halaman login.
+
+Here's your complete `resources/js/pages/auth/verify-email.tsx`:
+
+```tsx title="resources/js/pages/auth/verify-email.tsx"
+import { Form, Head, router, usePage } from '@inertiajs/react';
+
+import { send, verify } from '@/actions/App/Http/Controllers/Auth/EmailVerificationCodeController';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+
+export default function VerifyEmail({ status }: { status?: string }) {
+    const { auth } = usePage().props;
+
+    return (
+        <>
+            <Head title="Verifikasi Email" />
+
+            <div className="mx-auto max-w-md space-y-4 p-6">
+                <p className="text-sm text-muted-foreground">
+                    Kami mengirim kode 6 digit ke <strong>{auth.user.email}</strong>. Masukkan kode di bawah.
+                </p>
+
+                {status === 'verification-code-sent' && (
+                    <p className="text-sm text-green-600">Kode baru sudah dikirim.</p>
+                )}
+
+                <Form {...verify.form()} className="space-y-4">
+                    {({ processing, errors }) => (
+                        <>
+                            <div className="space-y-2">
+                                <Label htmlFor="code">Kode verifikasi</Label>
+                                <Input
+                                    id="code"
+                                    name="code"
+                                    inputMode="numeric"
+                                    autoComplete="one-time-code"
+                                    maxLength={6}
+                                    placeholder="123456"
+                                    autoFocus
+                                />
+                                {errors.code && <p className="text-sm text-red-600">{errors.code}</p>}
+                            </div>
+
+                            <Button type="submit" className="w-full" disabled={processing}>
+                                Verifikasi
+                            </Button>
+                        </>
+                    )}
+                </Form>
+
+                <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => router.post(send.url())}
+                >
+                    Kirim ulang kode
+                </Button>
+            </div>
+        </>
+    );
+}
+```
+
+## Test OTP
+
+Untuk development pakai `MAIL_MAILER=log` (kode ada di `storage/logs/laravel.log`) atau Mailpit.
+
+Here's your complete `tests/Feature/EmailVerificationCodeTest.php`:
+
+```php title="tests/Feature/EmailVerificationCodeTest.php"
+<?php
+
+use App\Models\User;
+use App\Notifications\VerificationCodeNotification;
+use App\Services\EmailVerificationCodeService;
+use Illuminate\Support\Facades\Notification;
+
+it('verifies email with the correct code', function () {
+    Notification::fake();
+    $user = User::factory()->unverified()->create();
+
+    app(EmailVerificationCodeService::class)->send($user);
+
+    $code = null;
+    Notification::assertSentTo($user, VerificationCodeNotification::class, function ($notification) use (&$code) {
+        $code = $notification->code;
+
+        return true;
+    });
+
+    $this->actingAs($user)
+        ->post(route('verification.code.verify'), ['code' => $code])
+        ->assertRedirect(route('dashboard'));
+
+    expect($user->fresh()->hasVerifiedEmail())->toBeTrue();
+});
+
+it('rejects a wrong code', function () {
+    Notification::fake();
+    $user = User::factory()->unverified()->create();
+    app(EmailVerificationCodeService::class)->send($user);
+
+    $this->actingAs($user)
+        ->post(route('verification.code.verify'), ['code' => '000000'])
+        ->assertSessionHasErrors('code');
+
+    expect($user->fresh()->hasVerifiedEmail())->toBeFalse();
+});
+```
+
+```bash
+php artisan test --filter=EmailVerificationCodeTest
+```
+
+## Catatan OTP
+
+- Kode hanya disimpan dalam bentuk hash, berlaku 10 menit, dan sekali pakai.
+- Kirim ulang dibatasi 60 detik.
+- Untuk email async: tambahkan `implements ShouldQueue` dan `use Queueable` di notification, lalu jalankan queue worker.
+- Route link bawaan Fortify tetap ada, tetapi tidak ada email yang mengirim linknya lagi.
+- User lama yang belum verified tidak otomatis dapat kode. Mereka cukup klik "Kirim ulang kode".
+
+## Cek pemahamanmu
+
+- [ ] Kenapa route OTP memakai middleware `auth` saja, tanpa `verified`?
+- [ ] Sebutkan dua lapis proteksi brute force pada alur ini.
+- [ ] Kenapa test mengambil kode dari `Notification::assertSentTo`, bukan dari database?

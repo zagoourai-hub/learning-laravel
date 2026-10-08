@@ -1,0 +1,117 @@
+---
+title: "Install React Starter Kit dan Peta Struktur Auth"
+description: "Buat project Laravel 13 dengan starter kit React (Inertia v3, shadcn/ui, Wayfinder, Fortify), jalankan dengan composer run dev, lalu pelajari di mana logic auth berada."
+module: "09-react-starter-kit"
+order: 1
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 20
+tags: ["react", "inertia", "starter-kit", "fortify", "wayfinder"]
+prerequisites: ["05-autentikasi/01-autentikasi-dan-starter-kit"]
+nextStep: "09-react-starter-kit/02-cara-kerja-auth"
+---
+
+Di modul sebelumnya tampilan dibuat dengan Blade. Modul ini memakai jalur lain: **Laravel 13 React Starter Kit**, lengkap dengan auth, verifikasi email, dan satu CRUD.
+
+Stack yang dipakai starter kit:
+
+- Laravel 13
+- React 19 dan Inertia v3
+- TypeScript
+- Tailwind v4 dan shadcn/ui
+- Wayfinder (route yang diketik, jadi fungsi TypeScript)
+- Laravel Fortify (auth)
+
+Contoh CRUD-nya adalah **Task**, yaitu to-do per user. Polanya sama untuk model lain, tinggal ganti nama dan kolom (misalnya `Product`, `Book`, atau `Item`).
+
+> Nama file dan folder bisa sedikit berbeda antar versi starter kit. Kalau ada yang tidak ketemu, cari dengan `ls` atau `grep`.
+
+## Daftar pelajaran
+
+1. Install project dan peta struktur auth (pelajaran ini)
+2. Cara kerja auth
+3. Verifikasi email: pilih kondisi, dan cara mematikannya
+4. Verifikasi email dengan link bawaan
+5. Verifikasi email dengan kode OTP: backend
+6. Verifikasi email dengan kode OTP: controller, halaman, dan test
+7. CRUD Task: backend
+8. CRUD Task: halaman React
+9. Testing, troubleshooting, dan ringkasan
+
+## Install project
+
+Prasyarat: PHP 8.3+ (disarankan 8.5), Composer, Node.js 20+, dan Laravel Installer (`composer global require laravel/installer`).
+
+```bash
+laravel new task-app
+```
+
+Pilih saat wizard:
+
+- Starter kit: **React**
+- Authentication: **Laravel's built-in authentication** (Fortify). Jangan pilih WorkOS.
+- Testing: Pest (bebas)
+
+```bash
+cd task-app
+composer run dev
+```
+
+Buka `http://localhost:8000`. `composer run dev` menjalankan server Laravel, queue, dan Vite sekaligus. Wayfinder otomatis meng-generate helper TypeScript selama Vite berjalan.
+
+## Struktur project
+
+```
+task-app/
+├── app/
+│   ├── Actions/Fortify/            # CreateNewUser, ResetUserPassword
+│   ├── Http/
+│   │   ├── Controllers/Settings/   # profile, password, 2FA
+│   │   ├── Middleware/             # HandleInertiaRequests (shared props)
+│   │   └── Requests/
+│   ├── Models/User.php
+│   └── Providers/FortifyServiceProvider.php
+├── config/fortify.php              # fitur auth yang aktif
+├── routes/
+│   ├── web.php
+│   └── settings.php
+└── resources/js/
+    ├── pages/
+    │   ├── auth/                   # login, register, forgot-password, dll
+    │   └── settings/               # profile, password, 2FA
+    ├── layouts/                    # app layout, auth layout
+    ├── components/                 # shadcn + komponen custom
+    ├── actions/                    # (generated) Wayfinder dari controller
+    └── routes/                     # (generated) Wayfinder dari named route
+```
+
+## Di mana logic auth?
+
+Route login dan register tidak ada di `routes/web.php` karena didaftarkan otomatis oleh Fortify.
+
+| Lokasi | Isinya |
+|---|---|
+| `app/Actions/Fortify/CreateNewUser.php` | Validasi dan pembuatan user saat register |
+| `app/Actions/Fortify/ResetUserPassword.php` | Logic reset password |
+| `app/Providers/FortifyServiceProvider.php` | Konfigurasi pusat: view Inertia untuk login/register, rate limiter |
+| `config/fortify.php` | Fitur yang aktif |
+| `app/Http/Controllers/Settings/*` | Update profile, password, 2FA |
+| `routes/settings.php` | Route halaman settings |
+| `app/Http/Middleware/HandleInertiaRequests.php` | Membagikan `auth.user` ke React |
+| `resources/js/pages/auth/*` | Tampilan login, register, dll |
+
+Aturan praktisnya: kalau mau mengubah **perilaku** auth, edit di backend. Kalau mau mengubah **tampilan**, edit di `resources/js/pages/auth/`. Validasi dan keamanan selalu dijalankan di backend.
+
+Contoh perubahan umum:
+
+- Tambah kolom saat register (misalnya `phone`): edit migration `users`, `CreateNewUser.php`, dan form register.
+- Ubah aturan password: edit validasi di `CreateNewUser.php` dan `ResetUserPassword.php`.
+- Ubah batas percobaan login: rate limiter di `FortifyServiceProvider.php`.
+
+## Cek pemahamanmu
+
+- [ ] Kenapa route `/login` tidak kamu temukan di `routes/web.php`?
+- [ ] Apa yang dijalankan oleh `composer run dev`?
+- [ ] File mana yang diedit untuk mengubah aturan password saat register?
+- [ ] Folder mana yang berisi hasil generate Wayfinder?

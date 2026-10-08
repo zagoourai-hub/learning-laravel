@@ -79,5 +79,15 @@ export const modules: ModuleMeta[] = [
     level: "menengah",
     order: 8,
     status: "published",
+    nextModule: "09-react-starter-kit",
+  },
+  {
+    id: "09-react-starter-kit",
+    title: "React Starter Kit: Auth & CRUD",
+    description:
+      "Laravel 13 React Starter Kit (Inertia, shadcn/ui, Wayfinder, Fortify): cara kerja auth, verifikasi email (mati, link, kode OTP), dan CRUD Task lengkap dengan testing.",
+    level: "menengah",
+    order: 9,
+    status: "published",
   },
 ];

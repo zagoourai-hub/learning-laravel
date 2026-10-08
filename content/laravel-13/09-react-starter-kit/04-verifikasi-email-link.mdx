@@ -1,0 +1,127 @@
+---
+title: "Verifikasi Email dengan Link Bawaan Fortify"
+description: "Aktifkan verifikasi email berbasis link: implement MustVerifyEmail, aktifkan fitur Fortify, daftarkan halaman verify-email, atur konfigurasi mail, dan tangani user lama."
+module: "09-react-starter-kit"
+order: 4
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 20
+tags: ["react", "fortify", "verifikasi-email", "mail", "inertia"]
+prerequisites: ["09-react-starter-kit/03-verifikasi-email-pilihan"]
+nextStep: "09-react-starter-kit/05-verifikasi-email-otp-backend"
+---
+
+Kondisi B memakai fitur bawaan Fortify: email berisi link, user klik, selesai. Ada tujuh langkah.
+
+## 1. Model User
+
+```php
+// app/Models/User.php
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+
+class User extends Authenticatable implements MustVerifyEmail
+```
+
+## 2. Aktifkan fitur
+
+```php
+// config/fortify.php
+Features::emailVerification(),
+```
+
+## 3. Daftarkan halaman notice
+
+Di `FortifyServiceProvider.php`:
+
+```php
+use Inertia\Inertia;
+
+Fortify::verifyEmailView(fn () => Inertia::render('auth/verify-email', [
+    'status' => session('status'),
+]));
+```
+
+## 4. Halaman React
+
+Here's your complete `resources/js/pages/auth/verify-email.tsx`:
+
+```tsx title="resources/js/pages/auth/verify-email.tsx"
+import { Head, router } from '@inertiajs/react';
+
+import { Button } from '@/components/ui/button';
+
+export default function VerifyEmail({ status }: { status?: string }) {
+    return (
+        <>
+            <Head title="Verifikasi Email" />
+
+            <div className="mx-auto max-w-md space-y-4 p-6">
+                <h1 className="text-xl font-semibold">Cek email kamu</h1>
+                <p className="text-sm text-muted-foreground">
+                    Kami mengirim link verifikasi ke email kamu. Klik link tersebut untuk melanjutkan.
+                </p>
+
+                {status === 'verification-link-sent' && (
+                    <p className="text-sm text-green-600">Link baru sudah dikirim.</p>
+                )}
+
+                <div className="flex gap-2">
+                    <Button onClick={() => router.post('/email/verification-notification')}>
+                        Kirim ulang link
+                    </Button>
+                    <Button variant="outline" onClick={() => router.post('/logout')}>
+                        Logout
+                    </Button>
+                </div>
+            </div>
+        </>
+    );
+}
+```
+
+> Untuk tampilan yang konsisten, bungkus dengan layout auth yang sama seperti halaman login. Kalau starter kit kamu sudah punya file `verify-email.tsx` bawaan, pakai itu dan tidak perlu menulis ulang.
+
+## 5. Route
+
+Pakai `['auth', 'verified']` untuk route yang diproteksi.
+
+## 6. Email
+
+Di `.env`:
+
+```env
+MAIL_MAILER=log          # dev: link muncul di storage/logs/laravel.log
+MAIL_FROM_ADDRESS="noreply@domain-kamu.com"
+MAIL_FROM_NAME="${APP_NAME}"
+```
+
+Untuk production pakai SMTP atau provider email sungguhan.
+
+## 7. User lama
+
+Begitu `verified` aktif, user lama dengan `email_verified_at` kosong akan terblokir. Kalau kamu tidak mau itu terjadi:
+
+```bash
+php artisan tinker
+>>> App\Models\User::whereNull('email_verified_at')->update(['email_verified_at' => now()]);
+```
+
+Lalu bersihkan cache dan regenerate Wayfinder:
+
+```bash
+php artisan optimize:clear
+php artisan wayfinder:generate --with-form
+```
+
+## Cara menguji
+
+1. Register akun baru. Kamu diarahkan ke halaman "Cek email kamu".
+2. Buka `storage/logs/laravel.log`, salin link verifikasi, dan buka di browser.
+3. Kamu masuk ke `/dashboard`.
+
+## Cek pemahamanmu
+
+- [ ] Kenapa `verified` tidak berfungsi kalau `User` tidak mengimplementasikan `MustVerifyEmail`?
+- [ ] Di mana link verifikasi muncul saat `MAIL_MAILER=log`?
+- [ ] Apa yang terjadi pada user lama setelah middleware `verified` dipasang, dan bagaimana mengatasinya?

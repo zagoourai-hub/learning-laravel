@@ -1,0 +1,279 @@
+---
+title: "CRUD Task: Halaman React (Index, Create, Edit)"
+description: "Buat tipe TypeScript, halaman tasks index dengan paginasi dan hapus, form create dan edit memakai komponen Form Inertia, komponen shadcn, dan menu sidebar."
+module: "09-react-starter-kit"
+order: 8
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 40
+tags: ["react", "inertia", "typescript", "shadcn", "wayfinder", "crud"]
+prerequisites: ["09-react-starter-kit/07-crud-task-backend"]
+nextStep: "09-react-starter-kit/09-testing-dan-troubleshooting"
+---
+
+Backend Task sudah siap. Sekarang tiga halaman React yang namanya harus sama dengan argumen `Inertia::render()`: `tasks/index`, `tasks/create`, dan `tasks/edit`.
+
+## Komponen shadcn yang dipakai
+
+Kalau ada yang belum tersedia:
+
+```bash
+npx shadcn@latest add textarea checkbox label input button
+```
+
+## Tipe data
+
+Here's your complete `resources/js/types/task.ts`:
+
+```ts title="resources/js/types/task.ts"
+export interface Task {
+    id: number;
+    title: string;
+    description: string | null;
+    is_done: boolean;
+    created_at: string;
+}
+
+export interface Paginated<T> {
+    data: T[];
+    links: { url: string | null; label: string; active: boolean }[];
+    current_page: number;
+    last_page: number;
+}
+```
+
+## Index (list dan hapus)
+
+Here's your complete `resources/js/pages/tasks/index.tsx`:
+
+```tsx title="resources/js/pages/tasks/index.tsx"
+import { Head, Link, router } from '@inertiajs/react';
+
+import { create, destroy, edit } from '@/actions/App/Http/Controllers/TaskController';
+import { Button } from '@/components/ui/button';
+import AppLayout from '@/layouts/app-layout';
+import type { Paginated, Task } from '@/types/task';
+
+interface Props {
+    tasks: Paginated<Task>;
+}
+
+export default function TasksIndex({ tasks }: Props) {
+    const handleDelete = (id: number) => {
+        if (!confirm('Hapus task ini?')) return;
+        router.delete(destroy.url(id), { preserveScroll: true });
+    };
+
+    return (
+        <AppLayout>
+            <Head title="Tasks" />
+
+            <div className="mx-auto w-full max-w-3xl space-y-4 p-4">
+                <div className="flex items-center justify-between">
+                    <h1 className="text-2xl font-semibold">Tasks</h1>
+                    <Button asChild>
+                        <Link href={create.url()}>Tambah Task</Link>
+                    </Button>
+                </div>
+
+                {tasks.data.length === 0 && (
+                    <p className="text-muted-foreground">Belum ada task.</p>
+                )}
+
+                <ul className="divide-y rounded-lg border">
+                    {tasks.data.map((task) => (
+                        <li key={task.id} className="flex items-center justify-between p-4">
+                            <div>
+                                <p className={task.is_done ? 'line-through opacity-60' : 'font-medium'}>
+                                    {task.title}
+                                </p>
+                                {task.description && (
+                                    <p className="text-sm text-muted-foreground">{task.description}</p>
+                                )}
+                            </div>
+                            <div className="flex gap-2">
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link href={edit.url(task.id)}>Edit</Link>
+                                </Button>
+                                <Button variant="destructive" size="sm" onClick={() => handleDelete(task.id)}>
+                                    Hapus
+                                </Button>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+
+                <div className="flex flex-wrap gap-1">
+                    {tasks.links.map((link, i) =>
+                        link.url ? (
+                            <Link
+                                key={i}
+                                href={link.url}
+                                preserveScroll
+                                className={`rounded border px-3 py-1 text-sm ${link.active ? 'bg-primary text-primary-foreground' : ''}`}
+                                dangerouslySetInnerHTML={{ __html: link.label }}
+                            />
+                        ) : (
+                            <span
+                                key={i}
+                                className="rounded border px-3 py-1 text-sm opacity-50"
+                                dangerouslySetInnerHTML={{ __html: link.label }}
+                            />
+                        ),
+                    )}
+                </div>
+            </div>
+        </AppLayout>
+    );
+}
+```
+
+## Create
+
+Here's your complete `resources/js/pages/tasks/create.tsx`:
+
+```tsx title="resources/js/pages/tasks/create.tsx"
+import { Form, Head, Link } from '@inertiajs/react';
+
+import { index, store } from '@/actions/App/Http/Controllers/TaskController';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import AppLayout from '@/layouts/app-layout';
+
+export default function TasksCreate() {
+    return (
+        <AppLayout>
+            <Head title="Tambah Task" />
+
+            <div className="mx-auto w-full max-w-xl space-y-4 p-4">
+                <h1 className="text-2xl font-semibold">Tambah Task</h1>
+
+                <Form {...store.form()} className="space-y-4">
+                    {({ processing, errors }) => (
+                        <>
+                            <div className="space-y-2">
+                                <Label htmlFor="title">Judul</Label>
+                                <Input id="title" name="title" autoFocus />
+                                {errors.title && <p className="text-sm text-red-600">{errors.title}</p>}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="description">Deskripsi</Label>
+                                <Textarea id="description" name="description" />
+                                {errors.description && (
+                                    <p className="text-sm text-red-600">{errors.description}</p>
+                                )}
+                            </div>
+
+                            <div className="flex gap-2">
+                                <Button type="submit" disabled={processing}>
+                                    Simpan
+                                </Button>
+                                <Button variant="outline" asChild>
+                                    <Link href={index.url()}>Batal</Link>
+                                </Button>
+                            </div>
+                        </>
+                    )}
+                </Form>
+            </div>
+        </AppLayout>
+    );
+}
+```
+
+## Edit
+
+Checkbox yang tidak dicentang tidak ikut terkirim oleh browser. Karena `is_done` wajib ada di `UpdateTaskRequest`, form memakai hidden input bernilai `0` di depan checkbox.
+
+Here's your complete `resources/js/pages/tasks/edit.tsx`:
+
+```tsx title="resources/js/pages/tasks/edit.tsx"
+import { Form, Head, Link } from '@inertiajs/react';
+
+import { index, update } from '@/actions/App/Http/Controllers/TaskController';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import AppLayout from '@/layouts/app-layout';
+import type { Task } from '@/types/task';
+
+interface Props {
+    task: Task;
+}
+
+export default function TasksEdit({ task }: Props) {
+    return (
+        <AppLayout>
+            <Head title="Edit Task" />
+
+            <div className="mx-auto w-full max-w-xl space-y-4 p-4">
+                <h1 className="text-2xl font-semibold">Edit Task</h1>
+
+                <Form {...update.form(task.id)} className="space-y-4">
+                    {({ processing, errors }) => (
+                        <>
+                            <div className="space-y-2">
+                                <Label htmlFor="title">Judul</Label>
+                                <Input id="title" name="title" defaultValue={task.title} />
+                                {errors.title && <p className="text-sm text-red-600">{errors.title}</p>}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="description">Deskripsi</Label>
+                                <Textarea
+                                    id="description"
+                                    name="description"
+                                    defaultValue={task.description ?? ''}
+                                />
+                            </div>
+
+                            {/* Hidden input keeps is_done=0 in the request when the checkbox is unchecked */}
+                            <input type="hidden" name="is_done" value="0" />
+                            <div className="flex items-center gap-2">
+                                <Checkbox id="is_done" name="is_done" value="1" defaultChecked={task.is_done} />
+                                <Label htmlFor="is_done">Selesai</Label>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <Button type="submit" disabled={processing}>
+                                    Update
+                                </Button>
+                                <Button variant="outline" asChild>
+                                    <Link href={index.url()}>Batal</Link>
+                                </Button>
+                            </div>
+                        </>
+                    )}
+                </Form>
+            </div>
+        </AppLayout>
+    );
+}
+```
+
+## Menu sidebar
+
+Edit `resources/js/components/app-sidebar.tsx` dan cari array `mainNavItems`:
+
+```tsx
+import { index as tasksIndex } from '@/actions/App/Http/Controllers/TaskController';
+import { ListTodo } from 'lucide-react';
+
+const mainNavItems: NavItem[] = [
+    { title: 'Dashboard', href: dashboard(), icon: LayoutGrid },
+    { title: 'Tasks', href: tasksIndex(), icon: ListTodo },
+];
+```
+
+## Cek pemahamanmu
+
+- [ ] Kenapa nama file `tasks/index.tsx` harus sama dengan `Inertia::render('tasks/index')`?
+- [ ] Untuk apa hidden input `is_done` bernilai `0` di halaman edit?
+- [ ] Apa yang dilakukan `store.form()` ketika di-spread ke komponen `Form`?
+- [ ] Kenapa label paginasi dirender dengan `dangerouslySetInnerHTML`?

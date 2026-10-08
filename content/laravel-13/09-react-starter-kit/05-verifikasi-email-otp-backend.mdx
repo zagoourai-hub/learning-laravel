@@ -1,0 +1,218 @@
+---
+title: "Verifikasi Email Kode OTP: Migration, Notification, dan Service"
+description: "Bangun fondasi verifikasi email dengan kode OTP 6 digit: tabel email_verification_codes, notification, EmailVerificationCodeService dengan hash, kedaluwarsa, batas percobaan, dan cooldown kirim ulang."
+module: "09-react-starter-kit"
+order: 5
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 30
+tags: ["react", "fortify", "verifikasi-email", "otp", "service", "notification"]
+prerequisites: ["09-react-starter-kit/04-verifikasi-email-link"]
+nextStep: "09-react-starter-kit/06-verifikasi-email-otp-halaman"
+---
+
+Fortify hanya menyediakan verifikasi lewat link. Untuk kode OTP 6 digit, kita buat sendiri.
+
+Idenya: tetap memakai `MustVerifyEmail`, middleware `verified`, dan event `Registered` bawaan. Yang diganti hanya isi email (kode, bukan link) dan cara memverifikasinya.
+
+```
+Register → event Registered → User::sendEmailVerificationNotification()
+  → generate kode 6 digit, simpan hash-nya, kirim email
+  → user input kode di halaman verify-email
+  → POST verifikasi → cocok → markEmailAsVerified() → /dashboard
+```
+
+Sebelum mulai, lakukan dulu langkah 1, 2, 5, dan 6 dari pelajaran 04: implement `MustVerifyEmail`, aktifkan fitur, route `verified`, dan konfigurasi email.
+
+## Migration dan model
+
+```bash
+php artisan make:model EmailVerificationCode -m
+```
+
+Isi method `up()` pada migration `xxxx_create_email_verification_codes_table.php`:
+
+```php
+public function up(): void
+{
+    Schema::create('email_verification_codes', function (Blueprint $table) {
+        $table->id();
+        $table->foreignId('user_id')->unique()->constrained()->cascadeOnDelete();
+        $table->string('code_hash');
+        $table->unsignedTinyInteger('attempts')->default(0);
+        $table->timestamp('expires_at');
+        $table->timestamp('last_sent_at');
+        $table->timestamps();
+    });
+}
+```
+
+Here's your complete `app/Models/EmailVerificationCode.php`:
+
+```php title="app/Models/EmailVerificationCode.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Model;
+
+#[Fillable(['user_id', 'code_hash', 'attempts', 'expires_at', 'last_sent_at'])]
+class EmailVerificationCode extends Model
+{
+    protected function casts(): array
+    {
+        return [
+            'expires_at' => 'datetime',
+            'last_sent_at' => 'datetime',
+        ];
+    }
+}
+```
+
+> Starter kit ini memakai atribut `#[Fillable]`. Kalau versi kamu masih memakai `protected $fillable = [...]`, gunakan gaya itu.
+
+```bash
+php artisan migrate
+```
+
+## Notification
+
+```bash
+php artisan make:notification VerificationCodeNotification
+```
+
+Here's your complete `app/Notifications/VerificationCodeNotification.php`:
+
+```php title="app/Notifications/VerificationCodeNotification.php"
+<?php
+
+namespace App\Notifications;
+
+use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Notifications\Notification;
+
+class VerificationCodeNotification extends Notification
+{
+    public function __construct(
+        public readonly string $code,
+        private readonly int $minutes,
+    ) {}
+
+    /** @return array<int, string> */
+    public function via(object $notifiable): array
+    {
+        return ['mail'];
+    }
+
+    public function toMail(object $notifiable): MailMessage
+    {
+        return (new MailMessage)
+            ->subject('Kode verifikasi email')
+            ->line('Kode verifikasi kamu:')
+            ->line("**{$this->code}**")
+            ->line("Kode berlaku {$this->minutes} menit.")
+            ->line('Abaikan email ini jika kamu tidak merasa mendaftar.');
+    }
+}
+```
+
+## Service (logic inti)
+
+Buat folder `app/Services` kalau belum ada. Here's your complete `app/Services/EmailVerificationCodeService.php`:
+
+```php title="app/Services/EmailVerificationCodeService.php"
+<?php
+
+namespace App\Services;
+
+use App\Models\EmailVerificationCode;
+use App\Models\User;
+use App\Notifications\VerificationCodeNotification;
+use Illuminate\Support\Facades\Hash;
+
+final class EmailVerificationCodeService
+{
+    private const TTL_MINUTES = 10;
+    private const MAX_ATTEMPTS = 5;
+    private const RESEND_COOLDOWN_SECONDS = 60;
+
+    public function send(User $user): void
+    {
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+        // Store only the hash, never the plain code
+        EmailVerificationCode::updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'code_hash' => Hash::make($code),
+                'attempts' => 0,
+                'expires_at' => now()->addMinutes(self::TTL_MINUTES),
+                'last_sent_at' => now(),
+            ],
+        );
+
+        $user->notify(new VerificationCodeNotification($code, self::TTL_MINUTES));
+    }
+
+    public function canResend(User $user): bool
+    {
+        $record = EmailVerificationCode::where('user_id', $user->id)->first();
+
+        return $record === null
+            || $record->last_sent_at->lte(now()->subSeconds(self::RESEND_COOLDOWN_SECONDS));
+    }
+
+    public function verify(User $user, string $code): bool
+    {
+        $record = EmailVerificationCode::where('user_id', $user->id)->first();
+
+        if ($record === null
+            || $record->expires_at->isPast()
+            || $record->attempts >= self::MAX_ATTEMPTS) {
+            return false;
+        }
+
+        if (! Hash::check($code, $record->code_hash)) {
+            $record->increment('attempts');
+
+            return false;
+        }
+
+        $record->delete(); // one-time use
+
+        return true;
+    }
+}
+```
+
+Tiga aturan ada di service ini: kode berlaku 10 menit, maksimal 5 percobaan salah, dan kirim ulang baru boleh setelah 60 detik.
+
+## Ganti email link jadi kode di User
+
+Method `sendEmailVerificationNotification()` dipanggil oleh listener event `Registered`. Dengan menimpanya, email link bawaan berganti menjadi email kode.
+
+```php
+// app/Models/User.php
+use App\Services\EmailVerificationCodeService;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+
+class User extends Authenticatable implements MustVerifyEmail
+{
+    // ...
+
+    /** Called by the Registered event listener, replaces the default link email. */
+    public function sendEmailVerificationNotification(): void
+    {
+        app(EmailVerificationCodeService::class)->send($this);
+    }
+}
+```
+
+## Cek pemahamanmu
+
+- [ ] Kenapa kode disimpan sebagai hash, bukan teks biasa?
+- [ ] Apa fungsi `unique()` pada kolom `user_id` di migration?
+- [ ] Apa yang terjadi pada record kode setelah verifikasi berhasil, dan kenapa?
+- [ ] Method mana di `User` yang menggantikan email link bawaan?

@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 "Laravel Belajar": a static Next.js site of Indonesian-language Laravel 13 tutorials, hosted on Vercel Hobby. The product plan is in `docs/PRD.md`. It covers architecture decisions (section 9), frontmatter (section 11), the code-tutorial pattern (section 11b) and the curriculum (section 12).
 
-Current content: all 8 modules are published (43 lessons). Module `02-crud-pemula` is the author's own tutorial (`docs/tutorial-laravel.md`); the other modules were written from the official Laravel 13.x docs via Context7, following `docs/content-guide.md`. Any Product CRUD code in any module must match `docs/tutorial-laravel.md` verbatim, plus only the changes the lesson's topic needs. Run `node scripts/check-mdx.mjs <folder|file>` for a fast MDX syntax check without a full build.
+Current content: all 9 modules are published (52 lessons). Module `02-crud-pemula` is the author's own tutorial (`docs/tutorial-laravel.md`); the other modules were written from the official Laravel 13.x docs via Context7, following `docs/content-guide.md`. Any Product CRUD code in any module must match `docs/tutorial-laravel.md` verbatim, plus only the changes the lesson's topic needs. Run `node scripts/check-mdx.mjs <folder|file>` for a fast MDX syntax check without a full build.
 
 ## Commands
 

@@ -1,0 +1,105 @@
+---
+title: "Verifikasi Email: Tiga Kondisi dan Cara Mematikannya"
+description: "Pilih antara verifikasi email mati, link bawaan Fortify, atau kode OTP custom. Pelajaran ini membahas kondisi mati (membersihkan sisa kode) dan cara berpindah antar kondisi."
+module: "09-react-starter-kit"
+order: 3
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 20
+tags: ["react", "fortify", "verifikasi-email", "cleanup"]
+prerequisites: ["09-react-starter-kit/02-cara-kerja-auth"]
+nextStep: "09-react-starter-kit/04-verifikasi-email-link"
+---
+
+Verifikasi email punya tiga kondisi. Pilih salah satu.
+
+| Kondisi | Hasil | Kerja |
+|---|---|---|
+| **A. Mati** | User register langsung masuk dashboard | Hapus sisa kode verifikasi |
+| **B. Link bawaan** | Email berisi link yang diklik | Aktifkan fitur bawaan Fortify |
+| **C. Kode OTP 6 digit** | Email berisi kode yang diketik di halaman verify | Custom, bawaan Fortify tidak menyediakan |
+
+> Starter kit kamu mungkin sudah tidak memiliki `MustVerifyEmail` (kalau sudah dihapus). Itu berarti kamu ada di kondisi A.
+
+Pelajaran ini membahas kondisi A. Kondisi B ada di pelajaran 04, dan kondisi C di pelajaran 05 dan 06.
+
+## Kondisi A: mati (tanpa verifikasi email)
+
+Jalankan pencarian ini untuk menemukan sisa referensi:
+
+```bash
+grep -rniE "verif|MustVerifyEmail|email_verified" app routes config resources/js tests --include=*.php --include=*.tsx --include=*.ts
+```
+
+Checklist yang dibersihkan:
+
+**1. `app/Models/User.php`**: tidak ada `implements MustVerifyEmail`.
+
+```php
+class User extends Authenticatable
+{
+    // ...
+}
+```
+
+**2. `config/fortify.php`**: comment atau hapus `Features::emailVerification()`.
+
+**3. `FortifyServiceProvider.php`**: hapus view verifikasi kalau ada.
+
+```php
+// Remove if present
+Fortify::verifyEmailView(fn () => Inertia::render('auth/verify-email', [
+    'status' => session('status'),
+]));
+```
+
+**4. `routes/web.php` dan `routes/settings.php`**: ganti `['auth', 'verified']` menjadi `['auth']`. Hapus route manual bernama `verification.notice` atau `verification.send` kalau ada.
+
+**5. `ProfileController.php`**: hapus prop `mustVerifyEmail` dan logic reset `email_verified_at`:
+
+```php
+// edit(): remove
+// 'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
+
+// update(): remove
+// if ($request->user()->isDirty('email')) {
+//     $request->user()->email_verified_at = null;
+// }
+```
+
+**6. `resources/js/pages/settings/profile.tsx`**: hapus prop `mustVerifyEmail`, blok UI "email belum diverifikasi", dan import route verification yang tidak terpakai. Kalau import itu tidak dihapus, TypeScript akan error.
+
+**7. Halaman**: hapus `resources/js/pages/auth/verify-email.tsx` bila tidak ada yang meng-import.
+
+**8. Test**: hapus atau sesuaikan `tests/Feature/Auth/EmailVerificationTest.php`, serta ekspektasi `unverified()` dan `verification.notice` di test lain.
+
+**9. Bersihkan dan regenerate:**
+
+```bash
+php artisan optimize:clear
+php artisan wayfinder:generate --with-form
+php artisan route:list | grep -i verif   # should be empty
+npm run build
+php artisan test
+```
+
+Tidak perlu dihapus: kolom `email_verified_at` di tabel `users`, cast-nya di `User.php`, dan factory state `unverified()`.
+
+Efek samping yang perlu disadari: email yang diketik user tidak terbukti miliknya. Kalau user salah ketik email, reset password lewat email tidak akan sampai.
+
+## Pindah antar kondisi
+
+| Dari | Ke | Yang dilakukan |
+|---|---|---|
+| A (mati) | B (link) | Ikuti pelajaran 04 |
+| A (mati) | C (OTP) | Ikuti pelajaran 04 langkah 1, 2, 5, 6, lalu pelajaran 05 dan 06 |
+| B / C | A (mati) | Ikuti checklist kondisi A di atas |
+
+Tips: simpan versi dengan verifikasi di branch Git terpisah (misalnya `with-email-verification`) kalau template ini kamu pakai berulang.
+
+## Cek pemahamanmu
+
+- [ ] Kenapa import route verification yang tidak terpakai bisa membuat build TypeScript gagal?
+- [ ] Apa risiko mematikan verifikasi email terhadap fitur reset password?
+- [ ] Bagian mana dari verifikasi yang tidak perlu dihapus saat mematikannya?

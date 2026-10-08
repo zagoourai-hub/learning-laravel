@@ -1,0 +1,106 @@
+---
+title: "Testing, Troubleshooting, dan Ringkasan Alur"
+description: "Uji CRUD Task secara manual dan otomatis dengan Pest (TaskFactory, test create dan otorisasi), tabel troubleshooting auth dan Inertia, serta ringkasan alur seluruh modul."
+module: "09-react-starter-kit"
+order: 9
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 25
+tags: ["react", "pest", "testing", "troubleshooting", "inertia"]
+prerequisites: ["09-react-starter-kit/08-crud-task-halaman-react"]
+---
+
+Pelajaran terakhir: menguji CRUD Task, mengenali error yang paling sering muncul, dan merangkum alur seluruh modul.
+
+## Testing manual
+
+1. Login, klik menu **Tasks**.
+2. **Create**: tambah task. Kosongkan judul dulu untuk melihat error validasi.
+3. **Read**: task muncul di list, dan paginasi muncul setelah lebih dari 10 data.
+4. **Update**: edit judul dan centang selesai.
+5. **Delete**: hapus task.
+6. **Keamanan**: login sebagai user lain, lalu buka `/tasks/{id}/edit` milik user pertama. Hasilnya harus 403.
+
+## Testing otomatis (Pest)
+
+Here's your complete `database/factories/TaskFactory.php` (isi method `definition()`):
+
+```php
+public function definition(): array
+{
+    return [
+        'user_id' => User::factory(),
+        'title' => fake()->sentence(3),
+        'description' => fake()->optional()->paragraph(),
+        'is_done' => false,
+    ];
+}
+```
+
+Here's your complete `tests/Feature/TaskTest.php`:
+
+```php title="tests/Feature/TaskTest.php"
+<?php
+
+use App\Models\Task;
+use App\Models\User;
+
+it('lets a user create a task', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->post(route('tasks.store'), ['title' => 'Belajar Laravel'])
+        ->assertRedirect(route('tasks.index'));
+
+    expect($user->tasks()->count())->toBe(1);
+});
+
+it('forbids editing another user task', function () {
+    $owner = User::factory()->create();
+    $other = User::factory()->create();
+    $task = Task::factory()->for($owner)->create();
+
+    $this->actingAs($other)
+        ->get(route('tasks.edit', $task))
+        ->assertForbidden();
+});
+```
+
+```bash
+php artisan test
+```
+
+## Troubleshooting
+
+| Masalah | Penyebab | Solusi |
+|---|---|---|
+| Import `@/actions/...` error | Wayfinder belum generate | Jalankan `composer run dev` atau `php artisan wayfinder:generate --with-form` |
+| Halaman blank atau page not found | Nama file page tidak sama dengan `Inertia::render()` | `tasks/index` berarti `resources/js/pages/tasks/index.tsx` |
+| Error 419 | Session atau CSRF | Refresh halaman, cek `SESSION_DRIVER` |
+| `is_done` selalu error saat update | Checkbox kosong tidak terkirim | Pakai hidden input seperti contoh edit |
+| 403 saat edit atau hapus | Policy menolak | Cek `user_id` task sama dengan user yang login |
+| Perubahan React tidak muncul | Vite tidak jalan | Pastikan `composer run dev` aktif |
+| Semua user terlempar ke halaman verifikasi | Middleware `verified` aktif, user lama belum verified | Isi `email_verified_at` lewat tinker (pelajaran 04 langkah 7) atau hapus `verified` |
+| Build TypeScript error soal route verification | Sisa import setelah verifikasi dimatikan | Jalankan grep di pelajaran 03, hapus import yang tidak terpakai |
+| Email OTP tidak terkirim | Config mail salah atau queue tidak jalan | Cek `.env` mail dan `storage/logs/laravel.log`, jalankan queue worker bila notification di-queue |
+| Kode OTP selalu salah | Sudah kedaluwarsa, lebih dari 5 percobaan, atau sudah diganti kode baru | Klik kirim ulang kode, pakai kode terbaru |
+
+## Ringkasan alur
+
+```
+Register/Login → Fortify (Actions + rate limiter) → session
+Request CRUD  → Route (auth[, verified]) → Controller → FormRequest (validasi)
+              → Policy (otorisasi) → Model/DB → Inertia::render() → React (props)
+Verifikasi    → Mati | Link bawaan | OTP custom (service + hash + expiry + throttle)
+```
+
+Pengembangan lanjutan: search dan filter, soft delete, toast notifikasi, upload file, role dan permission, serta OTP untuk reset password atau login 2 langkah.
+
+## Cek pemahamanmu
+
+- [ ] Kenapa test "forbids editing another user task" penting walaupun tampilan sudah menyembunyikan tombol Edit?
+- [ ] Error apa yang muncul kalau nama file halaman tidak sama dengan `Inertia::render()`?
+- [ ] Urutkan alur request CRUD dari route sampai React.
+
+Selamat, kamu sudah punya aplikasi Laravel 13 dengan React, auth, verifikasi email, dan CRUD yang aman per user.
