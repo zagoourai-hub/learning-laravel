@@ -294,7 +294,7 @@ export const Terminal = ({
         </div>
       </div>
       <pre className="p-4">
-        <code className="grid content-start gap-y-1 whitespace-pre-wrap break-words" style={{ minHeight: reservedHeight }}>
+        <code className="grid grid-cols-[minmax(0,1fr)] content-start gap-y-1 whitespace-pre-wrap [overflow-wrap:anywhere]" style={{ minHeight: reservedHeight }}>
           {wrappedChildren}
         </code>
       </pre>
