@@ -1,0 +1,211 @@
+---
+title: "Bonus: React Hook Form + Zod untuk Form Task"
+description: "Tambahkan validasi sisi klien dengan skema Zod dan zodResolver di atas TaskForm, tetap memetakan error validasi Laravel dengan setError, sehingga form tervalidasi dua lapis dan dipakai ulang oleh create dan edit."
+module: "09-react-starter-kit"
+order: 11
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 25
+tags: ["react", "react-hook-form", "zod", "inertia", "validation", "typescript"]
+prerequisites: ["09-react-starter-kit/10-crud-task-react-hook-form-v1"]
+---
+
+Di pelajaran v1, validasi hanya terjadi di server: judul kosong tetap dikirim lalu ditolak dengan 422. Itu aman, tapi user menunggu satu round trip hanya untuk tahu judulnya kosong.
+
+Pelajaran ini menambah lapisan kedua dengan **Zod**:
+
+- **Klien (Zod):** pesan langsung tanpa request, dan tipe TypeScript otomatis dari skema.
+- **Server (Laravel):** tetap menjadi penjaga terakhir. Klien bisa dilewati, jadi aturan di `StoreTaskRequest` dan `UpdateTaskRequest` tidak boleh dihapus.
+
+Komponen `TaskForm` tetap satu dan dipakai bersama oleh halaman create dan edit, persis seperti di v1.
+
+## Install
+
+```bash
+pnpm add zod @hookform/resolvers
+```
+
+`react-hook-form` sudah terpasang dari pelajaran v1. Pakai `npm install` kalau project kamu memakai npm.
+
+## Skema Zod
+
+Aturan di skema sengaja disamakan dengan `rules()` di Form Request:
+
+| Field | Aturan Laravel | Aturan Zod |
+|---|---|---|
+| `title` | `required`, `string`, `max:255` | `min(1)`, `max(255)` |
+| `description` | `nullable`, `string`, `max:2000` | `max(2000)` |
+| `is_done` | `required`, `boolean` | `boolean()` |
+
+Here's your complete `resources/js/schemas/task.ts`:
+
+```ts title="resources/js/schemas/task.ts"
+import { z } from 'zod';
+
+export const taskSchema = z.object({
+    title: z
+        .string()
+        .trim()
+        .min(1, 'Judul wajib diisi.')
+        .max(255, 'Judul maksimal 255 karakter.'),
+    description: z.string().max(2000, 'Deskripsi maksimal 2000 karakter.'),
+    is_done: z.boolean(),
+});
+
+export type TaskFormValues = z.infer<typeof taskSchema>;
+```
+
+`TaskFormValues` diturunkan dari skema, jadi tipe form dan aturan validasi tidak mungkin berbeda.
+
+## Menyambungkan skema ke RHF
+
+Satu opsi saja pada `useForm`:
+
+```tsx
+useForm<TaskFormValues>({
+    resolver: zodResolver(taskSchema),
+    defaultValues: { /* ... */ },
+});
+```
+
+Saat `handleSubmit` dipanggil, RHF menjalankan skema lebih dulu. Kalau gagal, error dipasang ke field dan fungsi submit **tidak** dipanggil. Kalau lolos, data yang diterima sudah lolos aturan klien, lalu dikirim ke Laravel dengan `router.post` atau `router.put`. Jika Laravel tetap menolak (misalnya aturan yang hanya ada di server), `onError` memetakan pesannya dengan `setError` seperti di v1.
+
+## Final Complete File
+
+Here's your complete `resources/js/components/task-form.tsx`:
+
+```tsx title="resources/js/components/task-form.tsx"
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Link, router } from '@inertiajs/react';
+import { useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+
+import { index, store, update } from '@/actions/App/Http/Controllers/TaskController';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { taskSchema } from '@/schemas/task';
+import type { TaskFormValues } from '@/schemas/task';
+import type { Task } from '@/types/task';
+
+interface Props {
+    task?: Task;
+}
+
+export default function TaskForm({ task }: Props) {
+    const [processing, setProcessing] = useState(false);
+
+    const {
+        register,
+        control,
+        handleSubmit,
+        setError,
+        formState: { errors },
+    } = useForm<TaskFormValues>({
+        resolver: zodResolver(taskSchema),
+        defaultValues: {
+            title: task?.title ?? '',
+            description: task?.description ?? '',
+            is_done: task?.is_done ?? false,
+        },
+    });
+
+    const onSubmit = (data: TaskFormValues) => {
+        const options = {
+            preserveScroll: true,
+            onStart: () => setProcessing(true),
+            onFinish: () => setProcessing(false),
+            // The server stays the last line of defence: map Laravel errors onto RHF fields
+            onError: (serverErrors: Record<string, string>) => {
+                Object.entries(serverErrors).forEach(([field, message]) => {
+                    setError(field as keyof TaskFormValues, { type: 'server', message });
+                });
+            },
+        };
+
+        if (task) {
+            router.put(update.url(task.id), data, options);
+        } else {
+            router.post(store.url(), data, options);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+            <div className="space-y-2">
+                <Label htmlFor="title">Judul</Label>
+                <Input id="title" autoFocus {...register('title')} />
+                {errors.title && <p className="text-sm text-red-600">{errors.title.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="description">Deskripsi</Label>
+                <Textarea id="description" {...register('description')} />
+                {errors.description && (
+                    <p className="text-sm text-red-600">{errors.description.message}</p>
+                )}
+            </div>
+
+            {task && (
+                <div className="flex items-center gap-2">
+                    <Controller
+                        name="is_done"
+                        control={control}
+                        render={({ field }) => (
+                            <Checkbox
+                                id="is_done"
+                                checked={field.value}
+                                onCheckedChange={(checked) => field.onChange(checked === true)}
+                            />
+                        )}
+                    />
+                    <Label htmlFor="is_done">Selesai</Label>
+                </div>
+            )}
+
+            <div className="flex gap-2">
+                <Button type="submit" disabled={processing}>
+                    {task ? 'Update' : 'Simpan'}
+                </Button>
+                <Button variant="outline" asChild>
+                    <Link href={index.url()}>Batal</Link>
+                </Button>
+            </div>
+        </form>
+    );
+}
+```
+
+Halaman `resources/js/pages/tasks/create.tsx` dan `edit.tsx` dari pelajaran v1 **tidak berubah**, karena keduanya hanya memanggil `<TaskForm />` dan `<TaskForm task={task} />`. Itulah gunanya satu komponen yang dipakai bersama.
+
+`TaskFormValues` tidak lagi dideklarasikan di `task-form.tsx`. Tipenya diimpor dari `@/schemas/task`.
+
+## Cara menguji
+
+1. Jalankan `composer run dev`, login, lalu buka **Tasks → Tambah Task**.
+2. Klik **Simpan** dengan judul kosong. Pesan "Judul wajib diisi." muncul seketika. Tab Network tidak menunjukkan request baru.
+3. Isi judul lebih dari 255 karakter. Pesan "Judul maksimal 255 karakter." muncul dari Zod.
+4. Uji lapisan server: di DevTools, kirim request manual tanpa `title` (atau nonaktifkan sementara resolver). Laravel membalas 422, dan pesannya tampil di bawah field lewat `setError`.
+5. Simpan task valid, lalu buka **Edit**, centang **Selesai**, klik **Update**.
+6. Jalankan `php artisan test`. Backend tidak berubah, jadi semua test tetap lolos.
+
+## Error umum
+
+| Masalah | Penyebab | Solusi |
+|---|---|---|
+| `Cannot find module '@hookform/resolvers/zod'` | Paket belum terpasang | `pnpm add @hookform/resolvers zod`, lalu restart Vite |
+| Form tidak mau submit tanpa pesan error | Ada field yang gagal skema tapi tidak punya tempat menampilkan pesan | Tampilkan `errors.<field>.message` untuk setiap field di skema |
+| Error tipe pada `useForm` dan `zodResolver` | Skema memakai `.default()` atau transform sehingga tipe input dan output berbeda | Hilangkan generic dan biarkan `useForm` menyimpulkan dari `resolver`, atau tulis `useForm<z.input<typeof s>, unknown, z.output<typeof s>>` |
+| `description` null dari server membuat skema gagal | Nilai awal `null` masuk ke field `string` | Ubah ke string kosong lewat `task?.description ?? ''` seperti di contoh |
+| Aturan klien dan server berbeda | Skema Zod dan Form Request diubah sendiri-sendiri | Ubah keduanya bersamaan; Laravel tetap yang menentukan |
+| Import `@/schemas/task` tidak ketemu | Folder `resources/js/schemas` belum dibuat atau alias `@` tidak mengarah ke `resources/js` | Buat file di path tersebut dan cek `tsconfig.json` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa aturan di `StoreTaskRequest` tidak boleh dihapus setelah ada skema Zod?
+- [ ] Apa keuntungan `z.infer<typeof taskSchema>` dibanding menulis `interface TaskFormValues` sendiri?
+- [ ] Kapan `onError` dan `setError` masih dipakai, padahal Zod sudah memvalidasi?
+- [ ] Kenapa halaman create dan edit tidak perlu diubah di pelajaran ini?

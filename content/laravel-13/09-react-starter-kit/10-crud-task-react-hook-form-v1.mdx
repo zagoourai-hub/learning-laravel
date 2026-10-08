@@ -1,0 +1,262 @@
+---
+title: "Bonus: Form Task dengan React Hook Form (Dasar)"
+description: "Ganti form create dan edit Task dengan React Hook Form dasar: register, Controller untuk komponen shadcn, submit lewat router Inertia dengan route Wayfinder, dan validasi sepenuhnya dari server lewat setError."
+module: "09-react-starter-kit"
+order: 10
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-08"
+estimatedMinutes: 30
+tags: ["react", "react-hook-form", "inertia", "shadcn", "wayfinder", "forms"]
+prerequisites: ["09-react-starter-kit/08-crud-task-halaman-react"]
+nextStep: "09-react-starter-kit/11-crud-task-react-hook-form-v2"
+---
+
+Di pelajaran 08, form Task memakai komponen `<Form>` bawaan Inertia. Itu sudah cukup untuk banyak kasus. Pelajaran bonus ini menunjukkan versi lain dengan **React Hook Form (RHF)**, supaya kamu bisa memilih dengan sadar.
+
+## Kapan RHF berguna, kapan `<Form>` Inertia cukup
+
+| Kebutuhan | `<Form>` Inertia | React Hook Form |
+|---|---|---|
+| Form sederhana, validasi di server saja | Cukup, kode paling pendek | Berlebihan |
+| Nilai field dibaca saat mengetik (`watch`) | Tidak praktis | Bawaan |
+| Validasi di sisi klien sebelum request | Manual | Bawaan (`rules` atau resolver) |
+| Form besar, field dinamis (`useFieldArray`) | Sulit | Bawaan |
+| Reset dan nilai awal terkontrol | Terbatas | `reset`, `defaultValues` |
+
+Di versi dasar ini, validasi **hanya** dijalankan di server (`StoreTaskRequest` dan `UpdateTaskRequest`). RHF hanya mengelola state form di browser, lalu error dari server dipetakan balik ke field. Validasi di sisi klien ditambahkan di pelajaran berikutnya (v2) dengan Zod.
+
+## Install
+
+```bash
+pnpm add react-hook-form
+```
+
+Pakai `npm install react-hook-form` kalau project kamu memakai npm.
+
+## Rencana
+
+Form create dan edit hampir sama, jadi kita buat satu komponen `TaskForm`, lalu dipakai oleh dua halaman. Tiga file:
+
+1. `resources/js/components/task-form.tsx`: form RHF yang dipakai bersama.
+2. `resources/js/pages/tasks/create.tsx`: memakai `TaskForm` tanpa task.
+3. `resources/js/pages/tasks/edit.tsx`: memakai `TaskForm` dengan task.
+
+Field Task hanya `title` (teks), `description` (teks panjang), dan `is_done` (boolean), jadi komponen shadcn yang dipakai adalah `Input`, `Textarea`, dan `Checkbox`. Kalau modelmu punya pilihan (misalnya `status`), `Select` dibungkus dengan `Controller` dengan cara yang sama seperti `Checkbox`.
+
+## Cara kerja `Controller`
+
+`register` cocok untuk elemen HTML biasa. Komponen shadcn `Checkbox` (berbasis Radix) bukan input native: nilainya `checked` dan perubahannya lewat `onCheckedChange`. Untuk komponen seperti itu, pakai `Controller`:
+
+```tsx
+<Controller
+    name="is_done"
+    control={control}
+    render={({ field }) => (
+        <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(v === true)} />
+    )}
+/>
+```
+
+`field.value` dan `field.onChange` menyambungkan komponen ke state RHF. `onCheckedChange` bisa mengirim `'indeterminate'`, jadi dibandingkan dengan `true` agar nilainya selalu boolean.
+
+## Alur submit
+
+1. `handleSubmit` menjalankan validasi klien, lalu memanggil fungsi submit kita dengan data form.
+2. Fungsi submit memanggil `router.post(store.url(), data)` (create) atau `router.put(update.url(task.id), data)` (edit).
+3. Kalau server membalas 422, Inertia memanggil `onError(errors)`. Kita ubah tiap entri menjadi `setError(field, { type: 'server', message })`.
+4. `onStart` dan `onFinish` mengatur state `processing`, karena `router` tidak mengembalikan promise.
+
+Data dikirim sebagai JSON, jadi `is_done` sampai ke server sebagai `true` atau `false`. Aturan `boolean` di `UpdateTaskRequest` menerimanya, sehingga hidden input `is_done=0` dari pelajaran 08 tidak diperlukan di sini.
+
+## Final Complete File
+
+Here's your complete `resources/js/components/task-form.tsx`:
+
+```tsx title="resources/js/components/task-form.tsx"
+import { Link, router } from '@inertiajs/react';
+import { useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+
+import { index, store, update } from '@/actions/App/Http/Controllers/TaskController';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import type { Task } from '@/types/task';
+
+interface TaskFormValues {
+    title: string;
+    description: string;
+    is_done: boolean;
+}
+
+interface Props {
+    task?: Task;
+}
+
+export default function TaskForm({ task }: Props) {
+    const [processing, setProcessing] = useState(false);
+
+    const {
+        register,
+        control,
+        handleSubmit,
+        setError,
+        formState: { errors },
+    } = useForm<TaskFormValues>({
+        defaultValues: {
+            title: task?.title ?? '',
+            description: task?.description ?? '',
+            is_done: task?.is_done ?? false,
+        },
+    });
+
+    const onSubmit = (data: TaskFormValues) => {
+        const options = {
+            preserveScroll: true,
+            onStart: () => setProcessing(true),
+            onFinish: () => setProcessing(false),
+            // Map Laravel validation errors (field => message) onto the matching RHF field
+            onError: (serverErrors: Record<string, string>) => {
+                Object.entries(serverErrors).forEach(([field, message]) => {
+                    setError(field as keyof TaskFormValues, { type: 'server', message });
+                });
+            },
+        };
+
+        if (task) {
+            router.put(update.url(task.id), data, options);
+        } else {
+            router.post(store.url(), data, options);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+            <div className="space-y-2">
+                <Label htmlFor="title">Judul</Label>
+                <Input id="title" autoFocus {...register('title')} />
+                {errors.title && <p className="text-sm text-red-600">{errors.title.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="description">Deskripsi</Label>
+                <Textarea id="description" {...register('description')} />
+                {errors.description && (
+                    <p className="text-sm text-red-600">{errors.description.message}</p>
+                )}
+            </div>
+
+            {task && (
+                <div className="flex items-center gap-2">
+                    <Controller
+                        name="is_done"
+                        control={control}
+                        render={({ field }) => (
+                            <Checkbox
+                                id="is_done"
+                                checked={field.value}
+                                onCheckedChange={(checked) => field.onChange(checked === true)}
+                            />
+                        )}
+                    />
+                    <Label htmlFor="is_done">Selesai</Label>
+                </div>
+            )}
+
+            <div className="flex gap-2">
+                <Button type="submit" disabled={processing}>
+                    {task ? 'Update' : 'Simpan'}
+                </Button>
+                <Button variant="outline" asChild>
+                    <Link href={index.url()}>Batal</Link>
+                </Button>
+            </div>
+        </form>
+    );
+}
+```
+
+Checkbox `is_done` hanya tampil saat edit, sama seperti di pelajaran 08. Saat create, `is_done` tetap terkirim sebagai `false`, dan `StoreTaskRequest` mengabaikannya karena tidak ada di `rules()`.
+
+Here's your complete `resources/js/pages/tasks/create.tsx`:
+
+```tsx title="resources/js/pages/tasks/create.tsx"
+import { Head } from '@inertiajs/react';
+
+import TaskForm from '@/components/task-form';
+import AppLayout from '@/layouts/app-layout';
+
+export default function TasksCreate() {
+    return (
+        <AppLayout>
+            <Head title="Tambah Task" />
+
+            <div className="mx-auto w-full max-w-xl space-y-4 p-4">
+                <h1 className="text-2xl font-semibold">Tambah Task</h1>
+
+                <TaskForm />
+            </div>
+        </AppLayout>
+    );
+}
+```
+
+Here's your complete `resources/js/pages/tasks/edit.tsx`:
+
+```tsx title="resources/js/pages/tasks/edit.tsx"
+import { Head } from '@inertiajs/react';
+
+import TaskForm from '@/components/task-form';
+import AppLayout from '@/layouts/app-layout';
+import type { Task } from '@/types/task';
+
+interface Props {
+    task: Task;
+}
+
+export default function TasksEdit({ task }: Props) {
+    return (
+        <AppLayout>
+            <Head title="Edit Task" />
+
+            <div className="mx-auto w-full max-w-xl space-y-4 p-4">
+                <h1 className="text-2xl font-semibold">Edit Task</h1>
+
+                <TaskForm task={task} />
+            </div>
+        </AppLayout>
+    );
+}
+```
+
+Backend (`TaskController`, Form Request, Policy, route) tidak berubah sama sekali.
+
+## Cara menguji
+
+1. Jalankan `composer run dev`, login, lalu buka **Tasks → Tambah Task**.
+2. Klik **Simpan** dengan judul kosong. Request dikirim, server membalas 422, dan pesan dari `StoreTaskRequest` muncul di bawah field Judul lewat `setError`. Cek tab Network untuk memastikan request memang terkirim.
+3. Isi judul dengan lebih dari 255 karakter. Hasilnya sama: error dari server muncul di field Judul.
+4. Simpan task yang valid. Kamu kembali ke daftar task.
+5. Buka **Edit**. Nilai awal terisi. Centang **Selesai**, klik **Update**, dan pastikan judul task di daftar tercoret.
+6. Jalankan `php artisan test`. Test dari pelajaran 09 tetap lolos karena backend tidak berubah.
+
+## Error umum
+
+| Masalah | Penyebab | Solusi |
+|---|---|---|
+| `Cannot find module 'react-hook-form'` | Paket belum terpasang | `pnpm add react-hook-form`, lalu restart Vite |
+| Pesan error server tidak muncul | Nama field di `setError` tidak sama dengan `name` di form | Samakan dengan key error Laravel (`title`, `description`, `is_done`) |
+| Checkbox tidak berubah | `Checkbox` shadcn dipasang dengan `register` | Bungkus dengan `Controller` dan pakai `onCheckedChange` |
+| `is_done` error "must be true or false" | Nilai dikirim sebagai `'indeterminate'` | Ubah dengan `checked === true` seperti di contoh |
+| Tombol tetap disabled setelah error | `processing` tidak dikembalikan | Pastikan `onFinish` memanggil `setProcessing(false)` |
+| Import `@/actions/...` error | Wayfinder belum generate | `php artisan wayfinder:generate --with-form` |
+
+## Cek pemahamanmu
+
+- [ ] Kenapa form ini tetap mengirim request walaupun judul kosong, dan siapa yang menolaknya?
+- [ ] Kenapa `Checkbox` shadcn memerlukan `Controller`, sedangkan `Input` cukup dengan `register`?
+- [ ] Apa fungsi `setError` pada `onError`, dan kenapa `type`-nya diisi `'server'`?
+- [ ] Kenapa `processing` memakai `useState` dan bukan `formState.isSubmitting`?
