@@ -1,0 +1,78 @@
+---
+title: "RHF atau Form Inertia, Checklist Tes, dan Troubleshooting"
+description: "Kapan memakai React Hook Form + Zod dan kapan cukup komponen Form Inertia bawaan, checklist tes sepuluh skenario toast, tabel troubleshooting, dan catatan penting modul."
+module: "10-flash-toast-auth-crud"
+order: 8
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-09"
+estimatedMinutes: 20
+tags: ["react-hook-form", "inertia", "testing", "troubleshooting", "checklist"]
+prerequisites: ["10-flash-toast-auth-crud/07-validasi-login-dan-browser"]
+---
+
+## React Hook Form atau `<Form>` Inertia?
+
+| Kasus | Pilihan |
+|---|---|
+| Login, register, forgot/reset password | `<Form>` Inertia bawaan |
+| CRUD sederhana (2-3 field) | Boleh keduanya |
+| Form kompleks (multi-step, field array, hitung otomatis, dependent field) | React Hook Form + Zod |
+
+Alasan login dan register tetap bawaan:
+
+1. Error, throttle, redirect, dan remember me sudah terhubung ke Fortify.
+2. Form-nya sederhana, tidak butuh schema.
+3. Menggantinya berarti menyalin ulang link dan komponen bawaan (`PasswordInput`, link lupa password), sumber bug baru.
+
+Pola yang dipakai di modul ini: **auth pakai bawaan, products dan modul kompleks pakai RHF + Zod**, dengan pesan dari server sebagai sumber utama.
+
+## Checklist tes
+
+Jalankan:
+
+```bash
+composer dev
+```
+
+| # | Skenario | Hasil yang diharapkan |
+|---|---|---|
+| 1 | Update profile | Toast sukses "Profil berhasil diperbarui." |
+| 2 | Login, email tidak terdaftar | Toast error "Email tidak terdaftar." |
+| 3 | Login, email terdaftar, password salah | Toast error "Kata sandi salah." |
+| 4 | Login benar | Toast sukses "Selamat datang kembali, nama!" |
+| 5 | Register akun baru | Toast sukses akun dibuat |
+| 6 | Logout | Toast sukses "Berhasil keluar." di halaman utama |
+| 7 | Tambah, ubah, hapus product | Toast sukses sesuai aksi |
+| 8 | Hapus product yang masih dipakai relasi | Toast error, tanpa halaman 500 |
+| 9 | Submit form product kosong | Error inline dari Zod |
+| 10 | Register: nama `ab`, password `abc` | Error inline bahasa Indonesia |
+
+## Troubleshooting
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Toast tidak muncul sama sekali | `<Toaster />` tidak terpasang atau format flash salah | Cek `app.tsx`, pastikan `type` dan `message` ada |
+| Toast muncul dobel | Listener didaftarkan manual selain auto-discovery, atau ada dua penampil flash | Hapus `Event::listen(...)` manual, jangan pasang penampil flash kedua |
+| Toast logout tidak muncul | Binding `LogoutResponse` belum terbaca, atau logout bukan lewat Fortify | Jalankan perintah `tinker` dan `route:list` di pelajaran 04 |
+| Teks masih bahasa Inggris | Locale masih `en`, file bahasa belum diisi, atau cache | Cek `.env`, `lang/id/auth.php`, `lang/id.json`, lalu `php artisan optimize:clear` |
+| Teks login gagal bukan buatan kita | `lang:add id` menimpa `auth.php` | Tambahkan ulang key custom di `lang/id/auth.php` |
+| Warning Intelephense di `->name` | `$event->user` bertipe `Authenticatable` | Tambahkan anotasi `@var User` |
+| `Target class ... does not exist` | File class belum dibuat atau namespace salah | Buat file, jalankan `composer dump-autoload` |
+| Posisi toast tidak berubah | `position` tertulis di `sonner.tsx` | Ubah di `components/ui/sonner.tsx` |
+| Tooltip validasi Inggris muncul | Browser memvalidasi input email | Pasang `noValidate` atau pakai `setCustomValidity` |
+
+## Catatan penting
+
+- API `Inertia::flash()` dan penampil toast di starter kit mengikuti Inertia v3. Pola ini sudah teruji untuk toast login berhasil dan login gagal di project sumber. Toast logout dan opsi B pada pelajaran 07 perlu dites sendiri.
+- Hapus `package-lock.json` kalau memakai pnpm, supaya tidak bentrok dengan `pnpm-lock.yaml`.
+- Kolom `price` bertipe integer (rupiah tanpa desimal). Kalau butuh desimal, ganti ke `decimal(12, 2)` dan ubah rule validasi serta `.int()` di Zod.
+- Dialog hapus akun di halaman settings sudah punya konfirmasi password bawaan. Jangan diganti dialog biasa.
+
+## Cek pemahamanmu
+
+- [ ] Kenapa login dan register sebaiknya tetap memakai `<Form>` Inertia bawaan?
+- [ ] Apa yang kamu cek pertama kali kalau toast tidak muncul sama sekali?
+- [ ] Skenario mana di checklist yang membuktikan `try/catch` di `ProductController` bekerja?
+
+Selamat, aplikasi kamu sekarang memberi umpan balik yang jelas lewat toast untuk CRUD dan auth, dalam bahasa Indonesia.

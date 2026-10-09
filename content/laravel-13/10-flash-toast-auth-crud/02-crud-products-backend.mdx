@@ -1,0 +1,211 @@
+---
+title: "CRUD Products dengan Flash: Backend"
+description: "Install paket frontend, lalu bangun backend products: migration, model, Form Request, ProductController dengan try/catch dan Inertia::flash toast sukses atau error, serta route."
+module: "10-flash-toast-auth-crud"
+order: 2
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-09"
+estimatedMinutes: 25
+tags: ["inertia", "flash", "crud", "form-request", "controller"]
+prerequisites: ["10-flash-toast-auth-crud/01-gambaran-besar-dan-flash"]
+nextStep: "10-flash-toast-auth-crud/03-crud-products-frontend"
+---
+
+Sekarang kita pasang flash di CRUD **products**. Pelajaran ini mengerjakan backend, pelajaran berikutnya frontend.
+
+## Install package frontend
+
+```bash
+pnpm add react-hook-form zod @hookform/resolvers
+pnpm dlx shadcn@latest add alert-dialog
+```
+
+## Generate file
+
+```bash
+php artisan make:model Product -m
+php artisan make:request StoreProductRequest
+php artisan make:request UpdateProductRequest
+php artisan make:controller ProductController --resource
+```
+
+## Migration
+
+Isi `up()` pada `database/migrations/xxxx_create_products_table.php`:
+
+```php
+public function up(): void
+{
+    Schema::create('products', function (Blueprint $table) {
+        $table->id();
+        $table->string('name');
+        $table->unsignedBigInteger('price');
+        $table->timestamps();
+    });
+}
+```
+
+## Model
+
+Here's your complete `app/Models/Product.php`:
+
+```php title="app/Models/Product.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Product extends Model
+{
+    protected $fillable = ['name', 'price'];
+}
+```
+
+## Form Request
+
+`StoreProductRequest` dan `UpdateProductRequest` isinya sama.
+
+Here's your complete `app/Http/Requests/StoreProductRequest.php`:
+
+```php title="app/Http/Requests/StoreProductRequest.php"
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class StoreProductRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /** @return array<string, array<int, string>> */
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'price' => ['required', 'integer', 'min:0'],
+        ];
+    }
+}
+```
+
+Salin isi yang sama ke `app/Http/Requests/UpdateProductRequest.php`, dengan nama class `UpdateProductRequest`.
+
+## Controller
+
+Dua method privat, `success()` dan `failed()`, memasang flash toast dengan format yang sama. Sukses diarahkan ke daftar, gagal kembali ke halaman sebelumnya.
+
+Here's your complete `app/Http/Controllers/ProductController.php`:
+
+```php title="app/Http/Controllers/ProductController.php"
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Models\Product;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\RedirectResponse;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class ProductController extends Controller
+{
+    public function index(): Response
+    {
+        return Inertia::render('products/index', [
+            'products' => Product::latest()->get(['id', 'name', 'price']),
+        ]);
+    }
+
+    public function create(): Response
+    {
+        return Inertia::render('products/create');
+    }
+
+    public function store(StoreProductRequest $request): RedirectResponse
+    {
+        try {
+            Product::create($request->validated());
+        } catch (QueryException $e) {
+            report($e);
+
+            return $this->failed(__('Failed to create product. Please try again.'));
+        }
+
+        return $this->success(__('Product created.'));
+    }
+
+    public function edit(Product $product): Response
+    {
+        return Inertia::render('products/edit', [
+            'product' => $product->only(['id', 'name', 'price']),
+        ]);
+    }
+
+    public function update(UpdateProductRequest $request, Product $product): RedirectResponse
+    {
+        try {
+            $product->update($request->validated());
+        } catch (QueryException $e) {
+            report($e);
+
+            return $this->failed(__('Failed to update product. Please try again.'));
+        }
+
+        return $this->success(__('Product updated.'));
+    }
+
+    public function destroy(Product $product): RedirectResponse
+    {
+        try {
+            $product->delete();
+        } catch (QueryException $e) {
+            report($e);
+
+            return $this->failed(__('Product cannot be deleted because it is still in use.'));
+        }
+
+        return $this->success(__('Product deleted.'));
+    }
+
+    private function success(string $message): RedirectResponse
+    {
+        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+
+        return to_route('products.index');
+    }
+
+    private function failed(string $message): RedirectResponse
+    {
+        Inertia::flash('toast', ['type' => 'error', 'message' => $message]);
+
+        return back();
+    }
+}
+```
+
+Blok `try/catch` melindungi dari kegagalan database, misalnya hapus data yang masih dipakai foreign key. Tanpa itu user kena halaman error 500.
+
+## Route
+
+```php
+// routes/web.php
+use App\Http\Controllers\ProductController;
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::resource('products', ProductController::class)->except('show');
+});
+```
+
+## Cek pemahamanmu
+
+- [ ] Kenapa `report($e)` dipanggil sebelum mengembalikan toast error?
+- [ ] Kenapa `failed()` memakai `back()` sedangkan `success()` memakai `to_route('products.index')`?
+- [ ] Apa yang terjadi pada user kalau `try/catch` di `destroy()` dihapus dan produk masih dipakai relasi?

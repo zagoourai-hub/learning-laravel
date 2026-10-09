@@ -1,0 +1,229 @@
+---
+title: "Notifikasi Auth: Login, Register, dan Logout"
+description: "Tampilkan toast untuk login berhasil, login gagal, dan register lewat listener event Fortify, lalu logout lewat custom LogoutResponse karena session dihapus sebelum flash sempat tampil."
+module: "10-flash-toast-auth-crud"
+order: 4
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-09"
+estimatedMinutes: 35
+tags: ["fortify", "listener", "event", "logout-response", "inertia", "flash"]
+prerequisites: ["10-flash-toast-auth-crud/03-crud-products-frontend"]
+nextStep: "10-flash-toast-auth-crud/05-bahasa-indonesia"
+---
+
+Login dan register ditangani **Fortify** (package di `vendor/`, tidak boleh diedit). Karena itu tidak ada controller milik kita untuk ditambahi `Inertia::flash(...)`. Solusinya: **listener event**.
+
+Cek dulu struktur auth di project:
+
+```bash
+ls app/Actions/Fortify
+```
+
+Kalau hanya ada `CreateNewUser.php` dan `ResetUserPassword.php`, berarti proses login ada di dalam Fortify, dan jalur listener adalah yang tepat.
+
+## Buat listener
+
+```bash
+php artisan make:listener FlashLoginSuccess
+php artisan make:listener FlashLoginFailed
+php artisan make:listener FlashRegisterSuccess
+```
+
+### Login berhasil
+
+Here's your complete `app/Listeners/FlashLoginSuccess.php`:
+
+```php title="app/Listeners/FlashLoginSuccess.php"
+<?php
+
+namespace App\Listeners;
+
+use App\Models\User;
+use Illuminate\Auth\Events\Login;
+use Inertia\Inertia;
+
+class FlashLoginSuccess
+{
+    public function handle(Login $event): void
+    {
+        // Skip auto-login via "remember me" cookie
+        if (! request()->isMethod('post')) {
+            return;
+        }
+
+        /** @var User $user */
+        $user = $event->user;
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Welcome back, :name!', ['name' => $user->name]),
+        ]);
+    }
+}
+```
+
+Anotasi `@var User` menghilangkan warning Intelephense "Undefined property name". `$event->user` bertipe interface `Authenticatable`, padahal saat runtime isinya model `User`.
+
+### Login gagal
+
+Here's your complete `app/Listeners/FlashLoginFailed.php`:
+
+```php title="app/Listeners/FlashLoginFailed.php"
+<?php
+
+namespace App\Listeners;
+
+use Illuminate\Auth\Events\Failed;
+use Inertia\Inertia;
+
+class FlashLoginFailed
+{
+    public function handle(Failed $event): void
+    {
+        $message = $event->user === null
+            ? __('auth.email_not_found')
+            : __('auth.password_wrong');
+
+        Inertia::flash('toast', [
+            'type' => 'error',
+            'message' => $message,
+        ]);
+    }
+}
+```
+
+> **Penting soal "password benar, email salah":** kasus ini **tidak bisa dideteksi**. Password disimpan sebagai hash milik satu user. Kalau email tidak terdaftar, tidak ada hash untuk dibandingkan. Yang bisa dibedakan hanya: email tidak terdaftar, atau email terdaftar tapi password salah.
+>
+> **Risiko keamanan:** pesan yang berbeda membuka celah *user enumeration* (penyerang tahu email mana yang terdaftar). Untuk aplikasi publik, pakai satu pesan umum saja (`auth.failed`).
+
+### Register berhasil
+
+Here's your complete `app/Listeners/FlashRegisterSuccess.php`:
+
+```php title="app/Listeners/FlashRegisterSuccess.php"
+<?php
+
+namespace App\Listeners;
+
+use Illuminate\Auth\Events\Registered;
+use Inertia\Inertia;
+
+class FlashRegisterSuccess
+{
+    public function handle(Registered $event): void
+    {
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Account created successfully. Welcome!'),
+        ]);
+    }
+}
+```
+
+Laravel mendeteksi listener otomatis dari type-hint `handle()`. **Jangan** mendaftarkan lagi lewat `Event::listen(...)` di `AppServiceProvider`, kalau tidak toast muncul dobel.
+
+## Verifikasi listener terdaftar
+
+```bash
+php artisan optimize:clear
+php artisan event:list --event=Login
+php artisan event:list --event=Registered
+php artisan event:list --event="Illuminate\Auth\Events\Failed"
+```
+
+Gunakan nama lengkap untuk `Failed`. Filter `--event=Failed` memakai pencocokan sebagian, sehingga event `PHPUnit\Event\Test\Failed` ikut tampil. Itu bukan masalah, hanya filter yang longgar.
+
+## Logout: pakai custom `LogoutResponse`
+
+Listener `Logout` **tidak cocok**. Urutan di Fortify:
+
+1. `guard->logout()` memicu event `Logout`.
+2. `session()->invalidate()` menghapus seluruh session, termasuk flash dari langkah 1.
+3. `LogoutResponse` dikembalikan.
+
+Flash harus dipasang di langkah 3, saat session baru sudah terbentuk.
+
+```bash
+New-Item -ItemType Directory -Force app/Http/Responses
+```
+
+> Perintah `New-Item` di atas untuk PowerShell. Di terminal bash/zsh pakai `mkdir -p app/Http/Responses`.
+
+Here's your complete `app/Http/Responses/LogoutResponse.php`:
+
+```php title="app/Http/Responses/LogoutResponse.php"
+<?php
+
+namespace App\Http\Responses;
+
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Inertia\Inertia;
+use Laravel\Fortify\Contracts\LogoutResponse as LogoutResponseContract;
+use Laravel\Fortify\Fortify;
+
+class LogoutResponse implements LogoutResponseContract
+{
+    public function toResponse($request): JsonResponse|RedirectResponse
+    {
+        if ($request->wantsJson()) {
+            return new JsonResponse('', 204);
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('auth.logout_success'),
+        ]);
+
+        return redirect(Fortify::redirects('logout', '/'));
+    }
+}
+```
+
+Daftarkan di `boot()` (bukan `register()`) agar menimpa binding bawaan Fortify:
+
+```php
+// app/Providers/AppServiceProvider.php
+use App\Http\Responses\LogoutResponse;
+use Laravel\Fortify\Contracts\LogoutResponse as LogoutResponseContract;
+
+public function boot(): void
+{
+    $this->app->singleton(LogoutResponseContract::class, LogoutResponse::class);
+}
+```
+
+Saat memilih import di VS Code, nama `LogoutResponse` ada di banyak namespace. Pilih:
+
+| File | Import |
+|---|---|
+| `LogoutResponse.php` | `Laravel\Fortify\Contracts\LogoutResponse as LogoutResponseContract` |
+| `AppServiceProvider.php` | `App\Http\Responses\LogoutResponse` dan `Laravel\Fortify\Contracts\LogoutResponse as LogoutResponseContract` |
+
+Jangan pilih `Laravel\Fortify\Http\Responses\LogoutResponse` (implementasi bawaan yang justru kita timpa).
+
+Verifikasi binding:
+
+```bash
+composer dump-autoload
+php artisan optimize:clear
+php artisan tinker --execute="echo get_class(app(Laravel\Fortify\Contracts\LogoutResponse::class));"
+```
+
+Hasil yang benar: `App\Http\Responses\LogoutResponse`. Kalau muncul error `Target class ... does not exist`, file `LogoutResponse.php` belum dibuat atau namespace-nya salah.
+
+Cek juga rute logout benar-benar milik Fortify:
+
+```bash
+php artisan route:list --name=logout
+```
+
+Kalau actionnya ternyata controller di `app/Http/Controllers/`, tidak perlu `LogoutResponse`. Cukup tambahkan `Inertia::flash(...)` di controller itu **setelah** `invalidate()`.
+
+## Cek pemahamanmu
+
+- [ ] Kenapa login dan register memakai listener, bukan menambah kode di controller?
+- [ ] Kenapa listener `Logout` tidak bisa dipakai untuk toast logout?
+- [ ] Kenapa `LogoutResponse` didaftarkan di `boot()`, bukan `register()`?
+- [ ] Apa risiko keamanan dari pesan login gagal yang berbeda untuk email dan password?

@@ -1,0 +1,304 @@
+---
+title: "CRUD Products dengan Flash: Frontend"
+description: "Bangun frontend products: komponen konfirmasi hapus dengan shadcn AlertDialog, halaman index, form bersama React Hook Form + Zod untuk create dan edit, serta halaman create dan edit."
+module: "10-flash-toast-auth-crud"
+order: 3
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-09"
+estimatedMinutes: 35
+tags: ["react", "inertia", "react-hook-form", "zod", "shadcn", "alert-dialog"]
+prerequisites: ["10-flash-toast-auth-crud/02-crud-products-backend"]
+nextStep: "10-flash-toast-auth-crud/04-notifikasi-auth"
+---
+
+Backend sudah mengirim flash toast. Frontend kita hanya perlu halaman, form, dan dialog konfirmasi hapus. Toast-nya sendiri dirender oleh `<Toaster />` bawaan starter kit.
+
+## Komponen konfirmasi delete
+
+Here's your complete `resources/js/components/confirm-delete.tsx`:
+
+```tsx title="resources/js/components/confirm-delete.tsx"
+import type { ReactNode } from 'react';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+
+type Props = {
+    itemName: string;
+    onConfirm: () => void;
+    children: ReactNode;
+};
+
+export default function ConfirmDelete({ itemName, onConfirm, children }: Props) {
+    return (
+        <AlertDialog>
+            <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Hapus data ini?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        &quot;{itemName}&quot; akan dihapus permanen dan tidak bisa dikembalikan.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Batal</AlertDialogCancel>
+                    <AlertDialogAction onClick={onConfirm}>Ya, hapus</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}
+```
+
+> Alternatif: kalau tetap mau SweetAlert hanya untuk konfirmasi, `pnpm add sweetalert2` lalu panggil `Swal.fire({ showCancelButton: true, ... })` dan cek `result.isConfirmed` sebelum `router.delete`. Tampilannya tidak seragam dengan UI shadcn.
+
+## Halaman index
+
+Here's your complete `resources/js/pages/products/index.tsx`:
+
+```tsx title="resources/js/pages/products/index.tsx"
+import { Head, Link, router } from '@inertiajs/react';
+import ConfirmDelete from '@/components/confirm-delete';
+
+type Product = {
+    id: number;
+    name: string;
+    price: number;
+};
+
+type Props = {
+    products: Product[];
+};
+
+const formatPrice = (value: number): string =>
+    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
+
+export default function ProductIndex({ products }: Props) {
+    return (
+        <>
+            <Head title="Products" />
+
+            <div className="space-y-4 p-4">
+                <div className="flex items-center justify-between">
+                    <h1 className="text-xl font-semibold">Products</h1>
+                    <Link href="/products/create" className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground">
+                        Add product
+                    </Link>
+                </div>
+
+                <table className="w-full text-left text-sm">
+                    <thead>
+                        <tr className="border-b">
+                            <th className="py-2">Name</th>
+                            <th className="py-2">Price</th>
+                            <th className="py-2">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {products.length === 0 && (
+                            <tr>
+                                <td colSpan={3} className="py-6 text-center text-muted-foreground">
+                                    No products yet.
+                                </td>
+                            </tr>
+                        )}
+
+                        {products.map((product) => (
+                            <tr key={product.id} className="border-b">
+                                <td className="py-2">{product.name}</td>
+                                <td className="py-2">{formatPrice(product.price)}</td>
+                                <td className="space-x-3 py-2">
+                                    <Link href={`/products/${product.id}/edit`} className="text-blue-600">
+                                        Edit
+                                    </Link>
+                                    <ConfirmDelete
+                                        itemName={product.name}
+                                        onConfirm={() => router.delete(`/products/${product.id}`, { preserveScroll: true })}
+                                    >
+                                        <button type="button" className="text-red-600">
+                                            Delete
+                                        </button>
+                                    </ConfirmDelete>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </>
+    );
+}
+```
+
+## Form bersama (create dan edit) dengan React Hook Form + Zod
+
+Satu komponen dipakai dua halaman. Kalau prop `product` ada, form berjalan sebagai edit (`router.put`), kalau tidak sebagai create (`router.post`). Error dari server dipetakan ke field dengan `setError`.
+
+Here's your complete `resources/js/components/product-form.tsx`:
+
+```tsx title="resources/js/components/product-form.tsx"
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Link, router } from '@inertiajs/react';
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+
+const productSchema = z.object({
+    name: z.string().min(1, 'Nama wajib diisi.').max(255, 'Nama terlalu panjang.'),
+    price: z
+        .number({ message: 'Harga wajib diisi.' })
+        .int('Harga harus bilangan bulat.')
+        .min(0, 'Harga tidak boleh negatif.'),
+});
+
+type ProductFormData = z.infer<typeof productSchema>;
+
+type Product = {
+    id: number;
+    name: string;
+    price: number;
+};
+
+type Props = {
+    product?: Product;
+};
+
+export default function ProductForm({ product }: Props) {
+    const [processing, setProcessing] = useState(false);
+
+    const {
+        register,
+        handleSubmit,
+        setError,
+        formState: { errors },
+    } = useForm<ProductFormData>({
+        resolver: zodResolver(productSchema),
+        defaultValues: {
+            name: product?.name ?? '',
+            price: product?.price ?? 0,
+        },
+    });
+
+    const onSubmit = (data: ProductFormData): void => {
+        const options = {
+            onStart: () => setProcessing(true),
+            onFinish: () => setProcessing(false),
+            onError: (serverErrors: Record<string, string>) => {
+                Object.entries(serverErrors).forEach(([field, message]) => {
+                    setError(field as keyof ProductFormData, { type: 'server', message });
+                });
+            },
+        };
+
+        if (product) {
+            router.put(`/products/${product.id}`, data, options);
+        } else {
+            router.post('/products', data, options);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
+            <div className="space-y-1">
+                <label htmlFor="name" className="text-sm font-medium">
+                    Name
+                </label>
+                <input id="name" {...register('name')} className="w-full rounded border bg-background px-3 py-2" />
+                {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
+            </div>
+
+            <div className="space-y-1">
+                <label htmlFor="price" className="text-sm font-medium">
+                    Price
+                </label>
+                <input
+                    id="price"
+                    type="number"
+                    {...register('price', { valueAsNumber: true })}
+                    className="w-full rounded border bg-background px-3 py-2"
+                />
+                {errors.price && <p className="text-sm text-red-500">{errors.price.message}</p>}
+            </div>
+
+            <div className="flex items-center gap-2">
+                <button
+                    type="submit"
+                    disabled={processing}
+                    className="rounded bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50"
+                >
+                    {processing ? 'Saving...' : product ? 'Update' : 'Save'}
+                </button>
+                <Link href="/products" className="rounded border px-4 py-2">
+                    Cancel
+                </Link>
+            </div>
+        </form>
+    );
+}
+```
+
+## Halaman create dan edit
+
+Here's your complete `resources/js/pages/products/create.tsx`:
+
+```tsx title="resources/js/pages/products/create.tsx"
+import { Head } from '@inertiajs/react';
+import ProductForm from '@/components/product-form';
+
+export default function ProductCreate() {
+    return (
+        <>
+            <Head title="Create product" />
+            <div className="space-y-4 p-4">
+                <h1 className="text-xl font-semibold">Create product</h1>
+                <ProductForm />
+            </div>
+        </>
+    );
+}
+```
+
+Here's your complete `resources/js/pages/products/edit.tsx`:
+
+```tsx title="resources/js/pages/products/edit.tsx"
+import { Head } from '@inertiajs/react';
+import ProductForm from '@/components/product-form';
+
+type Props = {
+    product: { id: number; name: string; price: number };
+};
+
+export default function ProductEdit({ product }: Props) {
+    return (
+        <>
+            <Head title="Edit product" />
+            <div className="space-y-4 p-4">
+                <h1 className="text-xl font-semibold">Edit product</h1>
+                <ProductForm product={product} />
+            </div>
+        </>
+    );
+}
+```
+
+## Cara menguji
+
+1. Jalankan `composer dev`, login, lalu buka `/products`.
+2. Tambah product. Toast sukses muncul setelah kamu kembali ke daftar.
+3. Edit product, lalu hapus lewat dialog konfirmasi.
+4. Kirim form create dalam keadaan kosong. Error inline dari Zod muncul tanpa request ke server.
+
+## Cek pemahamanmu
+
+- [ ] Bagaimana `ProductForm` membedakan mode create dan edit?
+- [ ] Kenapa input harga memakai `valueAsNumber: true`?
+- [ ] Siapa yang menampilkan toast setelah `router.post` berhasil: komponen form atau `<Toaster />`?

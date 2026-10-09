@@ -89,5 +89,15 @@ export const modules: ModuleMeta[] = [
     level: "menengah",
     order: 9,
     status: "published",
+    nextModule: "10-flash-toast-auth-crud",
+  },
+  {
+    id: "10-flash-toast-auth-crud",
+    title: "Flash Toast, Auth & CRUD",
+    description:
+      "Notifikasi sukses dan gagal dengan Inertia::flash dan toast Sonner untuk CRUD products serta login, register, logout, lengkap dengan bahasa Indonesia dan validasi.",
+    level: "menengah",
+    order: 10,
+    status: "published",
   },
 ];

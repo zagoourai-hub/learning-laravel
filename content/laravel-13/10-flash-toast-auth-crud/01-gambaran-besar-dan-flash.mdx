@@ -1,0 +1,80 @@
+---
+title: "Gambaran Besar dan Cara Kerja Flash Toast"
+description: "Kenapa notifikasi di Laravel + Inertia memakai Inertia::flash dan toast Sonner, bukan SweetAlert Blade, bagaimana format flash toast bekerja, dan cara memindahkan posisi toast."
+module: "10-flash-toast-auth-crud"
+order: 1
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-09"
+estimatedMinutes: 15
+tags: ["inertia", "flash", "sonner", "toast", "react"]
+prerequisites: ["09-react-starter-kit/02-cara-kerja-auth"]
+nextStep: "10-flash-toast-auth-crud/02-crud-products-backend"
+---
+
+Modul ini merangkum cara membuat notifikasi sukses dan gagal untuk CRUD products dan auth (login, register, logout) memakai **flash Inertia**, ditampilkan sebagai **toast Sonner** bawaan starter kit. Ditambah lokalisasi bahasa Indonesia dan validasi.
+
+> Semua kode memakai TypeScript untuk frontend dan PHP 8.3 untuk backend. Package manager: **pnpm**.
+
+Modul ini melanjutkan modul 09 (React Starter Kit). Kamu sebaiknya sudah punya project dengan starter kit React, Fortify, dan Inertia.
+
+## Gambaran besar
+
+| Kebutuhan | Solusi |
+|---|---|
+| Notifikasi sukses/gagal setelah simpan, ubah, hapus | `Inertia::flash('toast', ...)` di controller |
+| Notifikasi login, register, logout | Listener event + custom `LogoutResponse` |
+| Tampilan notifikasi | `<Toaster />` Sonner bawaan starter kit |
+| Konfirmasi sebelum delete | Dialog konfirmasi di frontend (shadcn `AlertDialog`) |
+| Error validasi per field | Inline (`errors` Inertia / `setError` React Hook Form) |
+| Bahasa Indonesia | `lang/id/*` + `lang/id.json` |
+
+### Kenapa `realrashid/sweet-alert` tidak cocok
+
+Package itu merender alert lewat Blade (`@include('sweetalert::alert')`). Di Laravel + React (Inertia) tidak ada Blade, sehingga alert tidak pernah muncul. Pisahkan tanggung jawab:
+
+- **Backend** hanya mengirim flash message.
+- **Frontend** membaca flash dan menampilkannya.
+
+Starter kit React Laravel terbaru sudah punya penampil flash `toast` lewat Sonner, jadi **tidak perlu membuat sistem notifikasi kedua**.
+
+## Cara kerja flash di starter kit
+
+Lihat `ProfileController` bawaan:
+
+```php
+Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);
+
+return to_route('profile.edit');
+```
+
+Aturan formatnya:
+
+| Key | Nilai |
+|---|---|
+| `type` | `success` atau `error` |
+| `message` | Teks yang tampil di toast |
+
+Di `resources/js/app.tsx` sudah ada `<Toaster />` yang menampilkan flash tersebut. Kita cukup memanggil `Inertia::flash(...)` di backend.
+
+## Posisi toast ke tengah atas
+
+```tsx
+// resources/js/app.tsx
+withApp(app) {
+    return (
+        <TooltipProvider delayDuration={0}>
+            {app}
+            <Toaster position="top-center" richColors />
+        </TooltipProvider>
+    );
+},
+```
+
+Pilihan posisi: `top-left`, `top-center`, `top-right`, `bottom-left`, `bottom-center`, `bottom-right`. Kalau tidak berpengaruh, cek `resources/js/components/ui/sonner.tsx`. Kemungkinan `position` ditulis di sana dan menimpa prop dari `app.tsx`.
+
+## Cek pemahamanmu
+
+- [ ] Kenapa `realrashid/sweet-alert` tidak muncul di aplikasi Inertia?
+- [ ] Apa dua key yang wajib ada pada flash `toast`?
+- [ ] File mana yang kamu cek kalau posisi toast tidak berubah?

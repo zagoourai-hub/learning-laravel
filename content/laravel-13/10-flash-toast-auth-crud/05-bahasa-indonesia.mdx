@@ -1,0 +1,86 @@
+---
+title: "Bahasa Indonesia: Terjemahan Toast dan Pesan Auth"
+description: "Pasang laravel-lang untuk locale id, tambah key custom di lang/id/auth.php, terjemahkan toast lewat lang/id.json, dan atur nama field di validation.php."
+module: "10-flash-toast-auth-crud"
+order: 5
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-09"
+estimatedMinutes: 20
+tags: ["localization", "lang", "laravel-lang", "bahasa-indonesia"]
+prerequisites: ["10-flash-toast-auth-crud/04-notifikasi-auth"]
+nextStep: "10-flash-toast-auth-crud/06-validasi-aturan-dan-password"
+---
+
+Semua toast di pelajaran sebelumnya ditulis dalam bahasa Inggris lewat `__('...')`. Sekarang kita terjemahkan ke bahasa Indonesia tanpa mengubah kode controller atau listener.
+
+## Pasang terjemahan dan set locale
+
+```bash
+composer require laravel-lang/common --dev
+php artisan lang:add id
+```
+
+```env
+APP_LOCALE=id
+APP_FALLBACK_LOCALE=id
+```
+
+Perintah `lang:add id` membuat `lang/id/` berisi `validation.php`, `auth.php`, `passwords.php`, dan lainnya.
+
+## Teks custom di `lang/id/auth.php`
+
+`lang:add id` menimpa `auth.php` dengan teks standar (misalnya "Identitas tersebut tidak cocok dengan data kami."). Karena locale sekarang `id`, Laravel **tidak lagi membaca `lang/en/auth.php`**. Tambahkan key buatan kita di file Indonesia, sisakan key bawaan lain:
+
+```php
+// lang/id/auth.php
+return [
+    'failed' => 'Email atau kata sandi salah.',
+    'email_not_found' => 'Email tidak terdaftar.',
+    'password_wrong' => 'Kata sandi salah.',
+    'logout_success' => 'Berhasil keluar.',
+    'password' => 'Kata sandi yang diberikan salah.',
+    'throttle' => 'Terlalu banyak percobaan login. Coba lagi dalam :seconds detik.',
+];
+```
+
+## Terjemahan toast yang ditulis dalam bahasa Inggris
+
+Pesan yang ditulis lewat `__('Product created.')` dan sejenisnya dicari di `lang/id.json`:
+
+```json title="lang/id.json"
+{
+    "Welcome back, :name!": "Selamat datang kembali, :name!",
+    "Account created successfully. Welcome!": "Akun berhasil dibuat. Selamat datang!",
+    "Profile updated.": "Profil berhasil diperbarui.",
+    "Product created.": "Produk berhasil ditambahkan.",
+    "Product updated.": "Produk berhasil diperbarui.",
+    "Product deleted.": "Produk berhasil dihapus.",
+    "Failed to create product. Please try again.": "Gagal menambahkan produk. Silakan coba lagi.",
+    "Failed to update product. Please try again.": "Gagal memperbarui produk. Silakan coba lagi.",
+    "Product cannot be deleted because it is still in use.": "Produk tidak dapat dihapus karena masih digunakan."
+}
+```
+
+## Nama field di `lang/id/validation.php`
+
+```php
+'attributes' => [
+    'name' => 'nama',
+    'email' => 'email',
+    'password' => 'kata sandi',
+    'password_confirmation' => 'konfirmasi kata sandi',
+],
+```
+
+Bersihkan cache setiap mengubah file bahasa:
+
+```bash
+php artisan optimize:clear
+```
+
+## Cek pemahamanmu
+
+- [ ] Kenapa key `email_not_found` harus ditambahkan lagi ke `lang/id/auth.php` setelah `lang:add id`?
+- [ ] File mana yang dibaca Laravel untuk `__('Product created.')`, dan file mana untuk `__('auth.logout_success')`?
+- [ ] Apa yang harus dijalankan setelah mengubah file bahasa?

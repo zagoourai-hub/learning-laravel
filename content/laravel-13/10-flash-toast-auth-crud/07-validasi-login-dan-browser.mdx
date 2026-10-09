@@ -1,0 +1,100 @@
+---
+title: "Validasi: Pesan Browser dan Format Email di Login"
+description: "Matikan validasi bawaan browser dengan noValidate, lalu atasi login dengan input bukan email lewat dua opsi: validasi client dengan setCustomValidity atau LoginRequest custom di server."
+module: "10-flash-toast-auth-crud"
+order: 7
+level: "menengah"
+laravelVersion: "13.x"
+lastVerified: "2026-10-09"
+estimatedMinutes: 25
+tags: ["validation", "login", "fortify", "form-request", "react"]
+prerequisites: ["10-flash-toast-auth-crud/06-validasi-aturan-dan-password"]
+nextStep: "10-flash-toast-auth-crud/08-rhf-checklist-troubleshooting"
+---
+
+## Pesan validasi browser berbahasa Inggris
+
+Pesan seperti "Please include an '@' in the email address" berasal dari browser (input bertipe email), bukan dari Laravel. Bahasanya mengikuti bahasa browser.
+
+Pasang `noValidate` pada `<Form>` agar validasi diserahkan ke Laravel dan pesannya Indonesia:
+
+```tsx
+<Form {...store.form()} noValidate>
+```
+
+## Login: kenapa "123" tidak dianggap bukan email
+
+Validasi login Fortify hanya `required` dan `string`. Aturan `email` tidak ada, jadi input "123" langsung dicocokkan ke database dan gagal sebagai kredensial. Ada dua cara.
+
+### Opsi A: validasi di client (simpel)
+
+Hapus `noValidate` dari form login, lalu ganti teks tooltip browser:
+
+```tsx
+<Input
+    id="email"
+    type="email"
+    name="email"
+    required
+    onInvalid={(e) =>
+        e.currentTarget.setCustomValidity(
+            e.currentTarget.validity.valueMissing
+                ? 'Email wajib diisi.'
+                : 'Format email tidak valid, contoh: nama@email.com.',
+        )
+    }
+    onInput={(e) => e.currentTarget.setCustomValidity('')}
+/>
+```
+
+`onInput` wajib ada, kalau tidak pesan custom menempel terus.
+
+### Opsi B: validasi di server (error inline merah)
+
+Here's your complete `app/Http/Requests/Auth/LoginRequest.php`:
+
+```php title="app/Http/Requests/Auth/LoginRequest.php"
+<?php
+
+namespace App\Http\Requests\Auth;
+
+use Laravel\Fortify\Fortify;
+use Laravel\Fortify\Http\Requests\LoginRequest as FortifyLoginRequest;
+
+class LoginRequest extends FortifyLoginRequest
+{
+    /** @return array<string, array<int, string>> */
+    public function rules(): array
+    {
+        return [
+            Fortify::username() => ['required', 'string', 'email'],
+            'password' => ['required', 'string'],
+        ];
+    }
+}
+```
+
+Daftarkan binding di `boot()`:
+
+```php
+// app/Providers/AppServiceProvider.php, di dalam boot()
+use App\Http\Requests\Auth\LoginRequest;
+use Laravel\Fortify\Http\Requests\LoginRequest as FortifyLoginRequest;
+
+$this->app->bind(FortifyLoginRequest::class, LoginRequest::class);
+```
+
+Karena validasi gagal sebelum autentikasi, event `Failed` tidak terpicu, sehingga toast "Email tidak terdaftar" tidak muncul untuk format salah. Yang tampil hanya error inline.
+
+> Opsi B belum diuji di project sumber tutorial ini. Tes dengan email `123` dan pastikan error inline muncul sebelum kamu mengandalkannya.
+
+| Opsi | Kelebihan | Kekurangan |
+|---|---|---|
+| A (client) | Cepat, tidak menyentuh backend | Hanya UX, bisa dilewati, tampil sebagai tooltip |
+| B (server) | Inline seragam, tidak bisa dilewati | Menyentuh alur Fortify |
+
+## Cek pemahamanmu
+
+- [ ] Dari mana pesan "Please include an '@'..." berasal?
+- [ ] Kenapa `onInput` dengan `setCustomValidity('')` wajib ada di opsi A?
+- [ ] Kenapa toast "Email tidak terdaftar" tidak muncul pada opsi B untuk input `123`?
